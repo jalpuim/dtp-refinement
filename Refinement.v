@@ -509,8 +509,8 @@ Lemma step5 : PT4 ⊑ (PT5a ;; PT5b).
   
   (* varR0 odd, varQ0 even *)
   rewrite <- div2_double at 1. unfold "*". rewrite <- plus_n_O. rewrite odd_odd_plus_div2. 
-  rewrite even_odd_plus_div2. rewrite <- plus_Sn_m. apply plus_lt_compat_r. 
-  apply odd_even_lt_div2. split; trivial. trivial. split; trivial. split; trivial.
+  rewrite even_plus_div2. rewrite <- plus_Sn_m. apply plus_lt_compat_r. 
+  apply odd_even_lt_div2. split; trivial. trivial. trivial. split; trivial.
 
   (* varR0 odd, varQ0 odd *)
   rewrite <- div2_double at 1. unfold "*". rewrite <- plus_n_O. rewrite odd_odd_plus_div2. 
