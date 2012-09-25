@@ -6,14 +6,9 @@
   - How to handle frame rules? What can change and what cannot?
 *)
 
-Require Import List.
 Require Import Bool.
-Require Import Div2.
-Require Import Arith.
-Require Import Arith.Bool_nat.
-Require Import String.
 
-Section Refinement.
+Module Refinement.
 
 Record S : Type := mkS {varP : nat; varQ : nat; varR : nat}.
 
@@ -60,6 +55,29 @@ Ltac refine_simpl := unfold subset, pre, post, extend; simpl; auto.
 Inductive Ty : Set := 
   | BOOL : Ty
   | INT : Ty.
+
+(*** Structural laws ***)
+
+(* TODO *)
+Lemma strengthenPost (P : Pow S) (Q1 Q2 : forall s, P s -> Pow S) :
+  (forall (s : S) (p : P s), Q1 s p ⊂ Q2 s p) -> 
+  [ P , Q2 ] ⊑ [ P , Q1 ].
+Proof.
+  intros.
+  assert (d: P ⊂ P) by (unfold subset; intros; trivial).
+  apply (Refinement ([P, Q2]) ([P, Q1]) d).
+  intros. unfold post. unfold subset in *. intros. apply H.
+  replace x with (d s x); trivial. 
+  unfold pre in *.
+Admitted.
+
+(* TODO *)
+Lemma weakenPre (P1 P2 : Pow S) (Q : forall s, P2 s -> Pow S) (f : P1 ⊂ P2) :
+  [ P1 , (fun s p s' => Q s (f s p) s') ] ⊑ [ P2 , Q ].
+Proof.
+  intros.
+Admitted.
+
 
 (*** SKIP **)
 
@@ -284,7 +302,13 @@ Definition refineSplitIf (pt1 pt2 pt3 pt4 : PT) (cond : S -> bool) :
   split; intros; [apply f1; apply H1 | apply f2; apply H2]; auto.
   Defined.
 
+End Refinement.
 
+Module While.
+
+Require Import EqNat.
+Require Import String.
+Import Refinement.
 
 Definition setP : nat -> S -> S := fun x s =>
   match s with
@@ -300,6 +324,130 @@ Definition setR : nat -> S -> S := fun x s =>
   match s with
     | mkS p q _ => mkS p q x
   end.
+
+(* Identifiers *) 
+
+Inductive Identifier : Type :=
+  | P : Identifier
+  | Q : Identifier
+  | R : Identifier.
+
+Definition setIdent (ident: Identifier) (n : nat) : S -> S :=
+  match ident with
+  | P => setP n
+  | Q => setQ n
+  | R => setR n
+end.
+
+Definition getIdent (ident: Identifier) (s : S) : nat := 
+  match ident , s with
+  | P , mkS p _ _ => p
+  | Q , mkS _ q _ => q
+  | R , mkS _ _ r => r
+end.
+
+(* Expressions *)
+
+Inductive Expr : Type :=
+  | Var    : Identifier -> Expr
+  | EConst : nat -> Expr
+  | Plus   : Expr -> Expr -> Expr
+  | Minus  : Expr -> Expr -> Expr
+  | Mult   : Expr -> Expr -> Expr
+  | Div    : Expr -> Expr -> Expr.
+
+Inductive BExpr : Type :=
+  | BConst : bool -> BExpr
+  | And    : BExpr -> BExpr -> BExpr
+  | Or     : BExpr -> BExpr -> BExpr
+  | Not    : BExpr -> BExpr
+  | Eq     : Expr -> Expr -> BExpr
+  | Lt     : Expr -> Expr -> BExpr
+  | Le     : Expr -> Expr -> BExpr
+  | Gt     : Expr -> Expr -> BExpr
+  | Ge     : Expr -> Expr -> BExpr.
+
+Fixpoint evalExpr (e: Expr) (s : S) : nat :=
+  match e with
+  | Var n     => (getIdent n) s
+  | EConst n  => n
+  | Plus x y  => evalExpr x s + evalExpr y s
+  | Minus x y => evalExpr x s - evalExpr y s
+  | Mult x y  => evalExpr x s * evalExpr y s
+  | Div x y   => 0 (* FIXME *)
+end.
+
+(* TODO: finish this *)
+Fixpoint evalBExpr (b: BExpr) (s: S) : bool :=
+  match b with
+  | BConst b  => b 
+  | And b1 b2 => andb (evalBExpr b1 s) (evalBExpr b2 s) 
+  | Or b1 b2  => orb (evalBExpr b1 s) (evalBExpr b2 s)
+  | Not e     => negb (evalBExpr e s)
+  | Eq e1 e2  => beq_nat (evalExpr e1 s) (evalExpr e2 s)
+  | Lt e1 e2  => true
+  | Le e1 e2  => true
+  | Gt e1 e2  => true
+  | Ge e1 e2  => true 
+end.
+
+(* While Language *)
+
+Inductive WhileL : Type :=
+  | WSkip   : WhileL
+  | WAssign : Identifier -> Expr -> WhileL
+  | WSeq    : WhileL -> WhileL -> WhileL
+  | WIf     : BExpr -> WhileL -> WhileL -> WhileL
+  | WWhile  : BExpr -> WhileL -> WhileL
+  | Spec    : PT -> WhileL.
+
+Fixpoint semantics (w: WhileL) : PT :=
+  match w with
+  | WSkip          => Skip
+  | WAssign id exp => Assign (fun s => (setIdent id (evalExpr exp s)) s)
+  | WSeq st1 st2   => Seq (semantics st1) (semantics st2)
+  | WIf c t e      => If (fun s => (evalBExpr c s)) (semantics t) (semantics e)
+  | WWhile c b     => [(fun _ => True),(fun _ _ _ => True)] (* TODO *)
+  | Spec pt        => pt
+end.
+
+Definition wrefines w1 w2 := (semantics w1) ⊑ (semantics w2).
+
+Notation "P1 ≤ P2" := (wrefines P1 P2) (at level 80) : type_scope.
+
+Fixpoint isExecutable (w: WhileL) : Prop :=
+  match w with 
+  | WSkip          => True
+  | WAssign id exp => True
+  | WSeq st1 st2   => (isExecutable st1) /\ (isExecutable st2)
+  | WIf c t e      => (isExecutable t) /\ (isExecutable e)
+  | WWhile c b     => isExecutable b
+  | Spec pt        => False
+end.
+
+(* TODO *)
+Fixpoint toCode (w: WhileL) : (isExecutable w) -> string := (fun _ =>
+  match w with
+  | WSkip          => EmptyString
+  | WAssign id exp => EmptyString
+  | WSeq st1 st2   => EmptyString
+  | WIf c t e      => EmptyString
+  | WWhile c b     => EmptyString
+  | Spec pt        => EmptyString
+end).
+
+End While.
+
+
+Module Example.
+
+Require Import Div2.
+Require Import Even.
+Require Import Arith.
+Require Import Arith.Bool_nat.
+Require Import AuxiliaryProofs.
+Import Refinement.
+Import While.
 
 Variable N : nat.
 
@@ -381,99 +529,6 @@ Definition PT5b :=
   If (fun s => proj1_sig (nat_lt_ge_bool N (square (varP s))))
     PT5bThen PT5bElse.
 
-Require Import Even.
-
-Theorem even_even_lt_div2 : forall m n, even m /\ even n -> m < n -> div2 m < div2 n.
-Proof.
-  intros m n.
-  generalize dependent m.
-  apply ind_0_1_SS with (n:=n).
-    intros m H1 H2. inversion H2.
-    intros m H1 H2. destruct H1. inversion H0. inversion H3.
-    intros n' H1 m H2 H3. simpl. generalize dependent m. intros m.
-    apply ind_0_1_SS with (n:=m). intros H2 H3. apply lt_O_Sn. intros H2 H3. apply lt_O_Sn.
-    intros n'' H2 H3 H4. simpl. apply lt_n_S. apply H1. destruct H3. split. inversion H.
-    inversion H5. trivial. inversion H0. inversion H5. trivial. 
-    repeat apply lt_S_n in H4. exact H4.
-Qed.
-
-Theorem even_plus_div2 : forall m n,
-  even m -> div2 (m + n) = div2 m + div2 n.
-Proof.
-  intros m n.
-  apply ind_0_1_SS with (n:=m).
-    intros H. simpl. reflexivity.
-    intros H. inversion H. inversion H1.
-    intros x Hind H1. simpl. apply eq_S. apply Hind. inversion H1. inversion H0. trivial.
-Qed.
-
-Theorem even_odd_lt_div2 : forall m n, 
-  even m /\ odd n -> Datatypes.S m < n -> div2 m < div2 n.
-Proof.
-  intros m n. generalize dependent m.
-  apply ind_0_1_SS with (n:=n).
-    intros m H1 H2. destruct H1 as [H3 H4]. inversion H4.
-    intros m H1 H2. simpl. inversion H2. subst. inversion H0.
-    intros n' H1 m H2 H3. simpl. generalize dependent m. intros m.
-    apply ind_0_1_SS with (n:=m). intros H2 H3. simpl. apply lt_O_Sn.
-    intros H2 H3. simpl. apply lt_O_Sn.
-    intros n'' H2 H3 H4. simpl. apply lt_n_S. apply H1. destruct H3 as [H5 H6]. split. 
-    inversion H5. inversion H0. trivial. inversion H6. inversion H0. trivial.
-    repeat apply lt_S_n in H4. exact H4.
-Qed.
-
-Theorem odd_even_lt_div2 : forall m n,
-  odd m /\ even n -> Datatypes.S m < n -> Datatypes.S (div2 m) < div2 n.
-Proof.
-  intros m.
-  apply ind_0_1_SS with (n:=m). 
-      intros n H1 H2. destruct H1 as [H1 H3]. inversion H1.
-      intros n H1 H2. simpl. inversion H2. destruct H1 as [H1 H3]. rewrite <- H in H3.
-      inversion H3. inversion H4. inversion H6. inversion H8.
-      subst. destruct H1 as [H1 H3]. inversion H1. subst. inversion H. simpl. auto.
-      subst. simpl. apply lt_n_S. inversion H0. simpl. auto. subst. inversion H5. simpl.
-      auto. simpl. apply lt_O_Sn.
-      intros n' H1 n H2 H3. simpl.
-      generalize dependent n. intros n.
-      apply ind_0_1_SS with (n:=n). intros H2 H3. inversion H3.
-      intros H2 H3. inversion H3. inversion H0.
-      intros n'' H2 H3 H4. simpl. apply lt_n_S. apply H1. destruct H3 as [H3 H5].
-      split. inversion H3. inversion H0. trivial. inversion H5. inversion H0. trivial.
-      repeat apply lt_S_n in H4. trivial.
-Qed.     
-
-Theorem odd_odd_plus_div2 : forall m n,
-  odd m /\ odd n -> div2 (m + n) = Datatypes.S (div2 m + div2 n).
-Proof.
-  intros m n.
-  apply ind_0_1_SS with (n:=m).
-    intros H1. destruct H1 as [H1 H2]. inversion H1.
-    apply ind_0_1_SS with (n:=n).
-      intros H1. destruct H1 as [H1 H2]. inversion H2.
-      intros H1. simpl. reflexivity.
-      intros n' H1 H2. rewrite plus_comm. simpl. apply eq_S. rewrite plus_comm.
-      apply H1. destruct H2 as [H2 H3]. split. trivial. inversion H3. inversion H0. trivial.
-    intros x Hind H1. simpl. apply eq_S. apply Hind. destruct H1 as [H1 H2]. split.
-    inversion H1. inversion H0. trivial. trivial.
-Qed.
-
-Theorem odd_odd_lt_div2 : forall m n,
-  odd m /\ odd n -> m < n -> div2 m < div2 n.
-Proof.
-  intros m n. generalize dependent m.
-  apply ind_0_1_SS with (n:=n).
-    intros m H1 H2. inversion H2.
-    intros m H1 H2. inversion H2. rewrite H0 in H1. destruct H1 as [H1 H3]. inversion H1.
-    inversion H0.
-    intros n' H1 m. apply ind_0_1_SS with (n:=m).
-      intros H2 H3. destruct H2 as [H4 H5]. inversion H4.
-      intros H2 H3. simpl. inversion H3. destruct H2 as [H2 H4]. 
-      rewrite <- H0 in H4. inversion H4. inversion H5. inversion H7. apply lt_O_Sn.
-      intros n'' H2 H3 H4. simpl. apply lt_n_S. apply H1. destruct H3 as [H3 H5].
-      split. inversion H3. inversion H0. trivial. inversion H5. inversion H0. trivial.
-      repeat apply lt_S_n in H4. exact H4.
-Qed.
-
 Lemma step5 : PT4 ⊑ (PT5a ;; PT5b).
   unfold PT4.
   unfold PT5a.
@@ -553,7 +608,7 @@ Lemma step5 : PT4 ⊑ (PT5a ;; PT5b).
 
   simpl. 
   Check refineIf.
-
+ 
 Admitted.
 
 Lemma step6Then : PT5bThen ⊑ Assign (fun s => setQ (varP s) s). 
@@ -578,7 +633,7 @@ Lemma step6Else : PT5bElse ⊑ Assign (fun s => setR (varP s) s).
   split; auto.
 Qed.
 
-(*
+
 Theorem result : SPEC ⊑ 
   (
   PT3a ;; 
@@ -592,100 +647,5 @@ Theorem result : SPEC ⊑
     apply (refineTrans (PT3a ;; PT3b)); try apply step3.
     apply refineRefl.  
 Qed.
-*)
 
-(* Identifiers *) 
-
-Inductive Identifier : Type :=
-  | P : Identifier
-  | Q : Identifier
-  | R : Identifier.
-
-Definition setIdent (ident: Identifier) : (nat -> S -> S) := (fun n => 
-  match ident with
-  | P => setP n
-  | Q => setQ n
-  | R => setR n
-end).
-
-Definition getIdent (ident: Identifier) : (S -> nat) := (fun s =>
-  match ident , s with
-  | P , mkS p _ _ => p
-  | Q , mkS _ q _ => q
-  | R , mkS _ _ r => r
-end).
-
-(* Expressions *)
-
-Inductive Expr : Type :=
-  | Var    : Identifier -> Expr
-  | EConst : nat -> Expr
-  | Plus   : Expr -> Expr -> Expr
-  | Minus  : Expr -> Expr -> Expr
-  | Mult   : Expr -> Expr -> Expr
-  | Div    : Expr -> Expr -> Expr.
-
-Inductive BExpr : Type :=
-  | BConst : bool -> BExpr
-  | And    : BExpr -> BExpr -> BExpr
-  | Or     : BExpr -> BExpr -> BExpr
-  | Eq     : Expr -> Expr -> BExpr
-  | Lt     : Expr -> Expr -> BExpr
-  | Le     : Expr -> Expr -> BExpr
-  | Gt     : Expr -> Expr -> BExpr
-  | Ge     : Expr -> Expr -> BExpr.
-
-Fixpoint evalExpr (e: Expr) (s : S) : nat :=
-  match e with
-  | Var n     => (getIdent n) s
-  | EConst n  => n
-  | Plus x y  => evalExpr x s + evalExpr y s
-  | Minus x y => evalExpr x s - evalExpr y s
-  | Mult x y  => evalExpr x s * evalExpr y s
-  | Div x y   => 0 (* FIXME *)
-end.
-
-(* TODO: finish this *)
-Fixpoint evalBExpr (b: BExpr) (s: S) : bool :=
-  match b with
-  | BConst b  => b 
-  | And b1 b2 => andb (evalBExpr b1 s) (evalBExpr b2 s) 
-  | Or b1 b2  => true
-  | Eq e1 e2  => true 
-  | Lt e1 e2  => true
-  | Le e1 e2  => true
-  | Gt e1 e2  => true
-  | Ge e1 e2  => true 
-end.
-
-(* While Language *)
-
-Inductive WhileL : Type :=
-  | WSkip   : WhileL
-  | WAssign : Identifier -> Expr -> WhileL
-  | WSeq    : WhileL -> WhileL -> WhileL
-  | WIf     : BExpr -> WhileL -> WhileL -> WhileL
-  | WWhile  : BExpr -> WhileL -> WhileL
-  | WRef    : PT -> WhileL -> WhileL.
-
-Fixpoint semantics (w: WhileL) : PT :=
-  match w with
-  | WSkip          => Skip
-  | WAssign id exp => [(fun _ => True),(fun _ _ _ => True)] (*Assign ((setIdent id) (evalExpr exp))*)
-  | WSeq st1 st2   => Seq (semantics st1) (semantics st2)
-  | WIf c t e      => If (fun s => (evalBExpr c s)) (semantics t) (semantics e) (* fixme *)
-  | WWhile c b     => [(fun _ => True),(fun _ _ _ => True)] (* TODO *)
-  | WRef pt prg    => [(fun _ => True),(fun _ _ _ => True)] (* TODO *)
-end.
-
-Definition bp (b: BExpr) (s: S) : Prop := (evalBExpr b s) = true.
-
-Fixpoint wp (w: WhileL) (post: Pow S) : Pow S :=
-  match w with
-  | WSkip          => post
-  | WAssign id exp => (fun x => True)
-  | WSeq st1 st2   => wp st1 (wp st2 post)
-  | WIf c t e      => (bp c -> wp t post) /\ ((~ bp c) -> wp e post)
-  | WWhile c b     => (fun x => True)
-  | WRef pt prg    => (fun x => True)
-end.
+End Example.
