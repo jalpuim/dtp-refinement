@@ -66,17 +66,17 @@ Proof.
   intros.
   assert (d: P ⊂ P) by (unfold subset; intros; trivial).
   apply (Refinement ([P, Q2]) ([P, Q1]) d).
-  intros. unfold post. unfold subset in *. intros. apply H.
-  replace x with (d s x); trivial. 
-  unfold pre in *.
+  intros. unfold post. unfold pre in x. unfold subset in *. intros. apply H.
+  
 Admitted.
 
-(* TODO *)
 Lemma weakenPre (P1 P2 : Pow S) (Q : forall s, P2 s -> Pow S) (f : P1 ⊂ P2) :
   [ P1 , (fun s p s' => Q s (f s p) s') ] ⊑ [ P2 , Q ].
 Proof.
   intros.
-Admitted.
+  apply (Refinement ([P1, fun (s : S) (p : P1 s) (s' : S) => Q s (f s p) s']) ([P2, Q]) f).
+  intros. unfold post. unfold subset. intros. trivial.
+Qed.
 
 
 (*** SKIP **)
@@ -415,6 +415,7 @@ Definition wrefines w1 w2 := (semantics w1) ⊑ (semantics w2).
 
 Notation "P1 ≤ P2" := (wrefines P1 P2) (at level 80) : type_scope.
 
+
 Fixpoint isExecutable (w: WhileL) : Prop :=
   match w with 
   | WSkip          => True
@@ -425,16 +426,47 @@ Fixpoint isExecutable (w: WhileL) : Prop :=
   | Spec pt        => False
 end.
 
+Open Local Scope string_scope.
+
+Definition identToCode (ident: Identifier) : string :=
+  match ident with
+  | P => "p"
+  | Q => "q"
+  | R => "r"
+end.
+
+Fixpoint exprToCode (e: Expr) : string :=
+  match e with
+  | Var n     => identToCode n
+  | EConst n  => EmptyString (* FIXME (show n?) *)
+  | Plus x y  => exprToCode x ++ " + " ++ exprToCode y
+  | Minus x y => exprToCode x ++ " - " ++ exprToCode y
+  | Mult x y  => exprToCode x ++ " * " ++ exprToCode y
+  | Div x y   => exprToCode x ++ " / " ++ exprToCode y
+end.
+
+Lemma isExecSeq1 (st1 st2: WhileL) :
+  let w := WSeq st1 st2 in
+  (isExecutable w) -> isExecutable st1.
+Proof. simpl; intros H; destruct H; trivial. Qed.
+
+Lemma isExecSeq2 (st1 st2: WhileL) :
+  let w := WSeq st1 st2 in
+  (isExecutable w) -> isExecutable st2.
+Proof. simpl; intros H; destruct H; trivial. Qed.
+
+
 (* TODO *)
-Fixpoint toCode (w: WhileL) : (isExecutable w) -> string := (fun _ =>
+Fixpoint toCode (w: WhileL) (p: isExecutable w) : string := 
   match w with
-  | WSkip          => EmptyString
-  | WAssign id exp => EmptyString
-  | WSeq st1 st2   => EmptyString
-  | WIf c t e      => EmptyString
-  | WWhile c b     => EmptyString
-  | Spec pt        => EmptyString
-end).
+  | WSkip          => "skip"
+  | WAssign id exp => identToCode id ++ " := " ++ exprToCode exp
+  | WSeq st1 st2   => "" (*toCode st1 (isExecSeq1 st1 st2 p) ++ ";\n" ++ 
+                      toCode st2 (isExecSeq2 st1 st2 p)*)
+  | WIf c t e      => ""
+  | WWhile c b     => ""
+  | Spec pt        => ""
+end.
 
 End While.
 
@@ -455,34 +487,44 @@ Definition square : nat -> nat := fun n => n * n.
 
 Definition Inv : S -> Prop := fun X => square (varR X) <= N < square (varQ X).
 
-
 Definition SPEC := 
-  [ (fun _ => True), fun _ _ X => square (varR X) <= N < square (1 + varR X)].
+  ([ (fun _ => True), fun _ _ X => square (varR X) <= N < square (1 + varR X)]).
 
 Definition PT1 :=
-  [ fun _ => True, fun _ _ X => Inv X /\ 1 + varR X = varQ X].
+  ([ fun _ => True, fun _ _ X => Inv X /\ 1 + varR X = varQ X]).
 
 Ltac refine_post pt1 pt2 := apply (Refinement _ _ (fun s (y : pre pt1 s) => y : pre pt2 s)).
 
-Lemma step1 : SPEC ⊑ PT1.
-  Proof.
-    unfold SPEC, PT1, Inv; refine_post SPEC PT1.
-    intros X tt s [H1 H2]; simpl in *; rewrite H2; apply H1.
+Definition WSPEC := Spec SPEC.
+
+Definition WPT1 := Spec PT1.
+
+Lemma step1 : WSPEC ≤ WPT1.
+  Proof.    
+    unfold WSPEC, WPT1, "≤", semantics. 
+    unfold SPEC, PT1, Inv. refine_post SPEC PT1.
+    intros X tt s [H1 H2]; simpl in *; rewrite H2; apply H1.    
   Qed.
 
 Definition PT2 := [fun _ => True , K Inv] ;; [Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X].
 
-Lemma step2 : PT1 ⊑ PT2.
+Definition WPT2 := WSeq (Spec ([fun _ => True , K Inv])) (Spec ([Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X])).
+
+Lemma step2 : WPT1 ≤ WPT2.
   Proof.
+    unfold WPT1, WPT2, "≤", semantics. 
     unfold PT1, PT2, Inv, Seq; simpl.
     assert (d : forall s, pre PT1 s -> pre PT2 s).
     intros; exists I; intros; auto.
     apply (Refinement _ _ d).
     simpl; intros s Pre s' [t [H1 [H2 H3]]]; split; auto.
-  Qed.
+Qed.
 
 Definition PT3a :=
   Assign (fun s => mkS (varP s)  (1 + N) 0).
+
+Definition WPT3a :=
+  WAssign P (Plus (EConst 1) (Var P)). (* TODO: N should be a variable? *)
 
 Definition PT3b :=
   While Inv (fun X => negb (beq_nat (1 + varR X) (varQ X))).
