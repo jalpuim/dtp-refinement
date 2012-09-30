@@ -10,7 +10,7 @@ Require Import Bool.
 
 Module Refinement.
 
-Record S : Type := mkS {varP : nat; varQ : nat; varR : nat}.
+Record S : Type := mkS {varN : nat; varP : nat; varQ : nat; varR : nat}.
 
 Definition Pow : Type -> Type := fun a => a -> Prop.
 
@@ -58,17 +58,16 @@ Inductive Ty : Set :=
 
 (*** Structural laws ***)
 
-(* TODO *)
 Lemma strengthenPost (P : Pow S) (Q1 Q2 : forall s, P s -> Pow S) :
   (forall (s : S) (p : P s), Q1 s p ⊂ Q2 s p) -> 
   [ P , Q2 ] ⊑ [ P , Q1 ].
 Proof.
   intros.
-  assert (d: P ⊂ P) by (unfold subset; intros; trivial).
+  set (d := fun (s : S) (H: P s) => H).
   apply (Refinement ([P, Q2]) ([P, Q1]) d).
   intros. unfold post. unfold pre in x. unfold subset in *. intros. apply H.
-  
-Admitted.
+  simpl in *; assumption.
+Qed.
 
 Lemma weakenPre (P1 P2 : Pow S) (Q : forall s, P2 s -> Pow S) (f : P1 ⊂ P2) :
   [ P1 , (fun s p s' => Q s (f s p) s') ] ⊑ [ P2 , Q ].
@@ -308,32 +307,40 @@ Module While.
 
 Require Import EqNat.
 Require Import String.
+Require Import Arith.Bool_nat.
 Import Refinement.
+
+Definition setN : nat -> S -> S := fun x s =>
+  match s with
+    | mkS _ p q r => mkS x p q r
+  end.
 
 Definition setP : nat -> S -> S := fun x s =>
   match s with
-    | mkS _ q r => mkS x q r
+    | mkS n _ q r => mkS n x q r
   end.
 
 Definition setQ : nat -> S -> S := fun x s =>
   match s with
-    | mkS p _ r => mkS p x r
+    | mkS n p _ r => mkS n p x r
   end.
 
 Definition setR : nat -> S -> S := fun x s =>
   match s with
-    | mkS p q _ => mkS p q x
+    | mkS n p q _ => mkS n p q x
   end.
 
 (* Identifiers *) 
 
 Inductive Identifier : Type :=
+  | N : Identifier
   | P : Identifier
   | Q : Identifier
   | R : Identifier.
 
 Definition setIdent (ident: Identifier) (n : nat) : S -> S :=
   match ident with
+  | N => setN n
   | P => setP n
   | Q => setQ n
   | R => setR n
@@ -341,9 +348,10 @@ end.
 
 Definition getIdent (ident: Identifier) (s : S) : nat := 
   match ident , s with
-  | P , mkS p _ _ => p
-  | Q , mkS _ q _ => q
-  | R , mkS _ _ r => r
+  | N , mkS n _ _ _ => n
+  | P , mkS _ p _ _ => p
+  | Q , mkS _ _ q _ => q
+  | R , mkS _ _ _ r => r
 end.
 
 (* Expressions *)
@@ -377,7 +385,6 @@ Fixpoint evalExpr (e: Expr) (s : S) : nat :=
   | Div x y   => 0 (* FIXME *)
 end.
 
-(* TODO: finish this *)
 Fixpoint evalBExpr (b: BExpr) (s: S) : bool :=
   match b with
   | BConst b  => b 
@@ -385,10 +392,10 @@ Fixpoint evalBExpr (b: BExpr) (s: S) : bool :=
   | Or b1 b2  => orb (evalBExpr b1 s) (evalBExpr b2 s)
   | Not e     => negb (evalBExpr e s)
   | Eq e1 e2  => beq_nat (evalExpr e1 s) (evalExpr e2 s)
-  | Lt e1 e2  => true
-  | Le e1 e2  => true
-  | Gt e1 e2  => true
-  | Ge e1 e2  => true 
+  | Lt e1 e2  => proj1_sig (nat_lt_ge_bool (evalExpr e1 s) (evalExpr e2 s))
+  | Le e1 e2  => proj1_sig (nat_le_gt_bool (evalExpr e1 s) (evalExpr e2 s))
+  | Gt e1 e2  => proj1_sig (nat_gt_le_bool (evalExpr e1 s) (evalExpr e2 s))
+  | Ge e1 e2  => proj1_sig (nat_ge_lt_bool (evalExpr e1 s) (evalExpr e2 s))
 end.
 
 (* While Language *)
@@ -398,7 +405,7 @@ Inductive WhileL : Type :=
   | WAssign : Identifier -> Expr -> WhileL
   | WSeq    : WhileL -> WhileL -> WhileL
   | WIf     : BExpr -> WhileL -> WhileL -> WhileL
-  | WWhile  : BExpr -> WhileL -> WhileL
+  | WWhile  : Pow S -> BExpr -> WhileL -> WhileL
   | Spec    : PT -> WhileL.
 
 Fixpoint semantics (w: WhileL) : PT :=
@@ -407,7 +414,7 @@ Fixpoint semantics (w: WhileL) : PT :=
   | WAssign id exp => Assign (fun s => (setIdent id (evalExpr exp s)) s)
   | WSeq st1 st2   => Seq (semantics st1) (semantics st2)
   | WIf c t e      => If (fun s => (evalBExpr c s)) (semantics t) (semantics e)
-  | WWhile c b     => [(fun _ => True),(fun _ _ _ => True)] (* TODO *)
+  | WWhile inv c b => While inv (fun s => (evalBExpr c s))
   | Spec pt        => pt
 end.
 
@@ -415,6 +422,20 @@ Definition wrefines w1 w2 := (semantics w1) ⊑ (semantics w2).
 
 Notation "P1 ≤ P2" := (wrefines P1 P2) (at level 80) : type_scope.
 
+(* Law 3.4 *)
+Lemma followAssign : forall (P: Pow S) (Q: forall (s : S), P s -> Pow S) 
+(id: Identifier) (e: Expr),
+  let Q' := (fun s p s' => s' = setIdent id (evalExpr e s) s) in
+  (forall s p, Q' s p ⊂ Q s p) ->
+  Spec ([P , Q]) ≤
+  WSeq (Spec ([P, Q'])) 
+       (WAssign id e).
+Proof.
+  intros P Q id e Q' H.
+  unfold "≤", semantics, Q' in *.
+
+Admitted.
+  
 
 Fixpoint isExecutable (w: WhileL) : Prop :=
   match w with 
@@ -422,7 +443,7 @@ Fixpoint isExecutable (w: WhileL) : Prop :=
   | WAssign id exp => True
   | WSeq st1 st2   => (isExecutable st1) /\ (isExecutable st2)
   | WIf c t e      => (isExecutable t) /\ (isExecutable e)
-  | WWhile c b     => isExecutable b
+  | WWhile inv c b => isExecutable b
   | Spec pt        => False
 end.
 
@@ -430,10 +451,11 @@ Open Local Scope string_scope.
 
 Definition identToCode (ident: Identifier) : string :=
   match ident with
+  | N => "n"
   | P => "p"
   | Q => "q"
   | R => "r"
-end.
+  end.
 
 Fixpoint exprToCode (e: Expr) : string :=
   match e with
@@ -443,30 +465,65 @@ Fixpoint exprToCode (e: Expr) : string :=
   | Minus x y => exprToCode x ++ " - " ++ exprToCode y
   | Mult x y  => exprToCode x ++ " * " ++ exprToCode y
   | Div x y   => exprToCode x ++ " / " ++ exprToCode y
+  end.
+
+Fixpoint bExprToCode (e: BExpr) : string :=
+  match e with
+  | BConst b  => match b with 
+                 | true  => "true"
+                 | false => "false"
+                 end
+  | And b1 b2 => "(" ++ bExprToCode b1 ++ " && " ++ bExprToCode b2 ++ ")"
+  | Or b1 b2  => "(" ++ bExprToCode b1 ++ " || " ++ bExprToCode b2 ++ ")"
+  | Not e     => "!" ++ bExprToCode e
+  | Eq e1 e2  => "(" ++ exprToCode e1 ++ " == " ++ exprToCode e2  ++ ")"
+  | Lt e1 e2  => "(" ++ exprToCode e1 ++ " < " ++ exprToCode e2  ++ ")"
+  | Le e1 e2  => "(" ++ exprToCode e1 ++ " <= " ++ exprToCode e2  ++ ")"
+  | Gt e1 e2  => "(" ++ exprToCode e1 ++ " > " ++ exprToCode e2  ++ ")"
+  | Ge e1 e2  => "(" ++ exprToCode e1 ++ " >= " ++ exprToCode e2  ++ ")"
+  end.
+
+Fixpoint sp (n: nat) : string := 
+   match n with
+   | 0 => ""
+   | Datatypes.S n' => " " ++ (sp n')
 end.
 
-Lemma isExecSeq1 (st1 st2: WhileL) :
-  let w := WSeq st1 st2 in
-  (isExecutable w) -> isExecutable st1.
-Proof. simpl; intros H; destruct H; trivial. Qed.
+(* TODO: pass (ident+n) to recursive calls *)
+Definition toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string.
+  induction w.
+  (* Skip *)
+  apply ((sp indent) ++ "skip").
+  (* Assign *)
+  apply ((sp indent) ++ (identToCode i) ++ " := " ++ (exprToCode e)).
+  (* Seq *)
+  simpl in *; destruct p as [p1 p2]; apply IHw1 in p1; apply IHw2 in p2.
+  apply (p1 ++ ";\n" ++ p2).
+  (* If *)
+  simpl in *; destruct p as [t e]; apply IHw1 in t; apply IHw2 in e.
+  apply ((sp indent) ++ "if " ++ (bExprToCode b) ++ "\n" ++
+         (sp indent) ++ "then { " ++ t ++ " }\n" ++
+         (sp indent) ++ "else { " ++ e ++ " }").
+  (* While *)
+  simpl in *; apply IHw in p.
+  apply ((sp indent) ++ "while " ++ (bExprToCode b) ++ "{\n" ++
+         (sp indent) ++ p ++ "}").
+  (* Spec *)
+  simpl in *; exfalso; trivial.
+  Defined.
 
-Lemma isExecSeq2 (st1 st2: WhileL) :
-  let w := WSeq st1 st2 in
-  (isExecutable w) -> isExecutable st2.
-Proof. simpl; intros H; destruct H; trivial. Qed.
+Ltac w2pt_apply t := unfold "≤",semantics; apply t.
 
+Definition wrefineTrans (w2 w1 w3 : WhileL) : 
+  w1 ≤ w2 -> w2 ≤ w3 -> w1 ≤ w3.
+    w2pt_apply refineTrans.
+  Defined.
 
-(* TODO *)
-Fixpoint toCode (w: WhileL) (p: isExecutable w) : string := 
-  match w with
-  | WSkip          => "skip"
-  | WAssign id exp => identToCode id ++ " := " ++ exprToCode exp
-  | WSeq st1 st2   => "" (*toCode st1 (isExecSeq1 st1 st2 p) ++ ";\n" ++ 
-                      toCode st2 (isExecSeq2 st1 st2 p)*)
-  | WIf c t e      => ""
-  | WWhile c b     => ""
-  | Spec pt        => ""
-end.
+Definition wrefineRefl (w : WhileL) :
+  w ≤ w.
+    w2pt_apply refineRefl.
+  Defined.
+
 
 End While.
 
@@ -481,14 +538,12 @@ Require Import AuxiliaryProofs.
 Import Refinement.
 Import While.
 
-Variable N : nat.
-
 Definition square : nat -> nat := fun n => n * n.
 
-Definition Inv : S -> Prop := fun X => square (varR X) <= N < square (varQ X).
+Definition Inv : S -> Prop := fun X => square (varR X) <= varN X < square (varQ X).
 
 Definition SPEC := 
-  ([ (fun _ => True), fun _ _ X => square (varR X) <= N < square (1 + varR X)]).
+  ([ (fun _ => True), fun _ _ X => square (varR X) <= varN X < square (1 + varR X)]).
 
 Definition PT1 :=
   ([ fun _ => True, fun _ _ X => Inv X /\ 1 + varR X = varQ X]).
@@ -513,7 +568,7 @@ Definition WPT2 := WSeq (Spec ([fun _ => True , K Inv])) (Spec ([Inv, fun _ _ X 
 Lemma step2 : WPT1 ≤ WPT2.
   Proof.
     unfold WPT1, WPT2, "≤", semantics. 
-    unfold PT1, PT2, Inv, Seq; simpl.
+    unfold PT1, PT2, Inv, Seq. simpl.
     assert (d : forall s, pre PT1 s -> pre PT2 s).
     intros; exists I; intros; auto.
     apply (Refinement _ _ d).
@@ -521,15 +576,31 @@ Lemma step2 : WPT1 ≤ WPT2.
 Qed.
 
 Definition PT3a :=
-  Assign (fun s => mkS (varP s)  (1 + N) 0).
+  Assign (fun s => mkS (varN s) (varP s) (1 + (varN s)) 0).
 
-Definition WPT3a :=
-  WAssign P (Plus (EConst 1) (Var P)). (* TODO: N should be a variable? *)
+Definition WPT3aa :=
+  WAssign R (EConst 0).
+
+Definition WPT3ab :=
+  WAssign R (Plus (EConst 1) (Var N)).
 
 Definition PT3b :=
   While Inv (fun X => negb (beq_nat (1 + varR X) (varQ X))).
 
-Lemma step3 : PT2 ⊑ (PT3a ;; PT3b).
+Definition WPT3b :=
+  WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) WSkip. (* FIXME *)
+
+Lemma step3 : WPT2 ≤ WSeq WPT3aa (WSeq WPT3ab WPT3b).
+Proof.
+  unfold WPT2,WPT3aa,WPT3ab,WPT3b,"≤",semantics.
+  simpl.
+  apply refineSplit.
+  apply refineAssign.
+  intros; simpl in *.
+  unfold K, Inv.
+Admitted.
+
+Lemma step3' : PT2 ⊑ (PT3a ;; PT3b).
   Proof.
    apply refineSplit.
    (* Part a *)
@@ -551,25 +622,33 @@ Definition PT4 :=
   [fun X => 1 + varR X < varQ X, fun _ _ X => varR X < varP X < varQ X];;
   [fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X].
 
+Definition WPT4 :=
+  WSeq (Spec ([fun X => 1 + varR X < varQ X, fun _ _ X => varR X < varP X < varQ X]))
+       (Spec ([fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X])).
+
 Lemma step4 : PT3b ⊑ PT4.
   (* proceed by refining body of while? *)
   Admitted.
   
-
 Definition PT5a :=
   Assign (fun s => setP (div2 (varQ s + varR s)) s).
 
 Definition PT5bThen := 
-  [fun s => (N < square (varP s)) /\ (varP s < varQ s) /\ Inv s,
+  [fun s => (varN s < square (varP s)) /\ (varP s < varQ s) /\ Inv s,
    fun _ _ s' => Inv s'].
+
+Definition WPT5bThen := Spec PT5bThen.
 
 Definition PT5bElse :=
-  [fun s => (N >= square (varP s)) /\ (varR s < varP s) /\ Inv s,
+  [fun s => (varN s >= square (varP s)) /\ (varR s < varP s) /\ Inv s,
    fun _ _ s' => Inv s'].
 
+Definition WPT5bElse := Spec PT5bElse.
+
 Definition PT5b :=
-  If (fun s => proj1_sig (nat_lt_ge_bool N (square (varP s))))
+  If (fun s => proj1_sig (nat_lt_ge_bool (varN s) (square (varP s))))
     PT5bThen PT5bElse.
+
 
 Lemma step5 : PT4 ⊑ (PT5a ;; PT5b).
   unfold PT4.
@@ -649,7 +728,9 @@ Lemma step5 : PT4 ⊑ (PT5a ;; PT5b).
   (** end goal **)
 
   simpl. 
-  Check refineIf.
+  unfold PT5bThen,PT5bElse, Inv.
+  apply refineIf.
+  
  
 Admitted.
 
@@ -660,10 +741,9 @@ Lemma step6Then : PT5bThen ⊑ Assign (fun s => setQ (varP s) s).
   destruct H as [H1 H2]; destruct H2 as [H2 H3].
   destruct s. unfold Inv.
   simpl in *. destruct H3 as [H3 H4]. destruct H3.
-  split; trivial. 
-  simpl in *.
-  split; auto.
-Qed.
+  split. 
+  simpl in *. 
+Admitted.
 
 Lemma step6Else : PT5bElse ⊑ Assign (fun s => setR (varP s) s). 
   apply refineAssign.
