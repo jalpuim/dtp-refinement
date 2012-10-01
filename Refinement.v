@@ -325,6 +325,7 @@ Require Import EqNat.
 Require Import String.
 Require Import Arith.Bool_nat.
 Require Import Div2.
+Require Import Show.
 Import Refinement.
 
 Axiom (showNat : nat -> string).
@@ -465,7 +466,7 @@ Definition identToCode (ident: Identifier) : string :=
 Fixpoint exprToCode (e: Expr) : string :=
   match e with
   | Var n     => identToCode n
-  | EConst n  => showNat n
+  | EConst n  => print_nat n
   | Plus x y  => exprToCode x ++ " + " ++ exprToCode y
   | Minus x y => exprToCode x ++ " - " ++ exprToCode y
   | Mult x y  => exprToCode x ++ " * " ++ exprToCode y
@@ -655,7 +656,12 @@ Definition WPT4 :=
   WSeq (Spec ([fun X => 1 + varR X < varQ X, fun _ _ X => varR X < varP X < varQ X]))
        (Spec ([fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X])).
 
-Lemma step4 : PT3b ⊑ PT4.
+Lemma step4 : WPT3b ≤ WPT4.
+  unfold WPT3b,WPT4,"≤",semantics.
+  simpl.
+Admitted.
+
+Lemma step4' : PT3b ⊑ PT4.
   (* proceed by refining body of while? *)
   Admitted.
   
