@@ -308,10 +308,10 @@ Module While.
 Require Import EqNat.
 Require Import String.
 Require Import Arith.Bool_nat.
+Require Import Div2.
 Import Refinement.
 
 Axiom (showNat : nat -> string).
-
 
 Definition setN : nat -> S -> S := fun x s =>
   match s with
@@ -365,7 +365,7 @@ Inductive Expr : Type :=
   | Plus   : Expr -> Expr -> Expr
   | Minus  : Expr -> Expr -> Expr
   | Mult   : Expr -> Expr -> Expr
-  | Div    : Expr -> Expr -> Expr.
+  | Div2   : Expr -> Expr.
 
 Inductive BExpr : Type :=
   | BConst : bool -> BExpr
@@ -385,7 +385,7 @@ Fixpoint evalExpr (e: Expr) (s : S) : nat :=
   | Plus x y  => evalExpr x s + evalExpr y s
   | Minus x y => evalExpr x s - evalExpr y s
   | Mult x y  => evalExpr x s * evalExpr y s
-  | Div x y   => 0 (* FIXME *)
+  | Div2 x    => div2 (evalExpr x s)
 end.
 
 Fixpoint evalBExpr (b: BExpr) (s: S) : bool :=
@@ -463,11 +463,11 @@ Definition identToCode (ident: Identifier) : string :=
 Fixpoint exprToCode (e: Expr) : string :=
   match e with
   | Var n     => identToCode n
-  | EConst n  => EmptyString (* FIXME (show n?) *)
+  | EConst n  => showNat n
   | Plus x y  => exprToCode x ++ " + " ++ exprToCode y
   | Minus x y => exprToCode x ++ " - " ++ exprToCode y
   | Mult x y  => exprToCode x ++ " * " ++ exprToCode y
-  | Div x y   => exprToCode x ++ " / " ++ exprToCode y
+  | Div2 x    => exprToCode x ++ " / 2"
   end.
 
 Fixpoint bExprToCode (e: BExpr) : string :=
@@ -492,51 +492,50 @@ Fixpoint sp (n: nat) : string :=
    | Datatypes.S n' => " " ++ (sp n')
 end.
 
-Lemma A : forall w1 w2, isExecutable (WSeq w1 w2) -> isExecutable w1.
-  Proof.
-  unfold isExecutable; intros; simpl.
-  destruct H as [H1 H2]; assumption.
-  Qed.
+Lemma isExecSeq1 : forall w1 w2, isExecutable (WSeq w1 w2) -> isExecutable w1.
+Proof. intros; destruct H as [H1 H2]; assumption. Qed.
 
-Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
-  match w as w' return (isExecutable w' -> nat -> string) with
-    | WSkip => fun _ _  => ""
-    | WSeq w1 w2 => fun p' i' => toCode w1 (A w1 w2 p') 0
-    | _ => fun _ _ => ""
-  end p indent.
+Lemma isExecSeq2 : forall w1 w2, isExecutable (WSeq w1 w2) -> isExecutable w2.
+Proof. intros; destruct H as [H1 H2]; assumption. Qed.
+
+Lemma isExecThen : forall c t e, isExecutable (WIf c t e) -> isExecutable t.
+Proof. intros; destruct H as [H1 H2]; assumption. Qed.
+
+Lemma isExecElse : forall c t e, isExecutable (WIf c t e) -> isExecutable e.
+Proof. intros; destruct H as [H1 H2]; assumption. Qed.
+
+Lemma isExecBody : forall inv c b, isExecutable (WWhile inv c b) -> isExecutable b.
+Proof. intros; assumption. Qed.
+
+Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string.
+  refine (match w as w' return (isExecutable w' -> nat -> string) with
+    | WSkip           => fun _ _  => ((sp indent) ++ "skip")
+    | WAssign id exp  => fun _ _ => 
+                         ((sp indent) ++ (identToCode id) ++ " := " ++ (exprToCode exp))
+    | WSeq w1 w2      => fun p' i' => 
+                         (toCode w1 (isExecSeq1 w1 w2 p') i') ++ ";\n" ++ 
+                         (toCode w2 (isExecSeq2 w1 w2 p') i')
+    | WIf c t e       => fun p' i' =>
+                         (sp indent) ++ "if " ++ (bExprToCode c) ++ "\n" ++
+                         (sp indent) ++ "then {\n" ++ 
+                         (toCode t (isExecThen c t e p') (i'+1)) ++ " }\n" ++
+                         (sp indent) ++ "else {\n" ++ 
+                         (toCode e (isExecElse c t e p') (i'+1)) ++ " }"
+    | WWhile inv c b  => fun p' i' =>
+                         (sp indent) ++ "while " ++ (bExprToCode c) ++ "{\n" ++
+                         (sp indent) ++ (toCode b (isExecBody inv c b p') (i'+1)) ++ "}"
+    | Spec pt         => fun p' i' => _
+  end p indent).
+  inversion p'. Qed.
 
 
+Definition whileExample : WhileL :=
+  WSeq WSkip (WSeq (WIf (BConst true) WSkip WSkip) (WAssign P (Plus (Var R) (Var Q)))).
 
-(* TODO: pass (ident+n) to recursive calls *)
-(* 
+Lemma whileExec : isExecutable whileExample.
+  Proof. unfold isExecutable; simpl; auto. Qed.
 
-Definition toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string.
-  generalize p indent.
-
-  refine (WhileL_rec (fun w0 : WhileL => isExecutable w0 -> nat -> string) _ _ _ _ _ _ w).
-  (* Skip *)
-  intros; apply ((sp indent) ++ "skip").
-  (* Assign *)
-  intros; apply ((sp indent) ++ (identToCode i) ++ " := " ++ (exprToCode e)).
-  (* Seq *)
-  simpl in *; destruct p as [p1 p2]; apply IHw1 in p1; apply IHw2 in p2.
-  apply (p1 ++ ";\n" ++ p2).
-  (* If *)
-  simpl in *; destruct p as [t e]; apply IHw1 in t; apply IHw2 in e.
-  apply ((sp indent) ++ "if " ++ (bExprToCode b) ++ "\n" ++
-         (sp indent) ++ "then { " ++ t ++ " }\n" ++
-         (sp indent) ++ "else { " ++ e ++ " }").
-  (* While *)
-  simpl in *; apply IHw in p.
-  apply ((sp indent) ++ "while " ++ (bExprToCode b) ++ "{\n" ++
-         (sp indent) ++ p ++ "}").
-  (* Spec *)
-  simpl in *; exfalso; trivial.
-  Defined.
-
-Print toCode.
-*)
-
+Eval compute in (toCode whileExample whileExec 0).
 
 Ltac w2pt_apply t := unfold "≤",semantics; apply t.
 
@@ -550,7 +549,6 @@ Definition wrefineRefl (w : WhileL) :
     w2pt_apply refineRefl.
   Defined.
 
-
 End While.
 
 
@@ -560,7 +558,7 @@ Require Import Div2.
 Require Import Even.
 Require Import Arith.
 Require Import Arith.Bool_nat.
-(* Require Import AuxiliaryProofs. *)
+Require Import AuxiliaryProofs.
 Import Refinement.
 Import While.
 
@@ -612,21 +610,20 @@ Definition WPT3ab :=
 
 Definition WPT3a := WSeq WPT3aa WPT3ab.
 
-
 Definition PT3b :=
   While Inv (fun X => negb (beq_nat (1 + varR X) (varQ X))).
 
-Definition WPT3b :=
-  WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) (WSpec [Not Guard /\ Inv, Inv]). (* FIXME *)
 
-Lemma step3 : WPT2 ≤ WSeq WPT3aa (WSeq WPT3ab WPT3b).
+Definition WPT3b :=
+  let guard := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) in
+  WWhile Inv guard (Spec ([fun s => evalBExpr guard s = true /\ Inv s, 
+                           fun _ _ s' => Inv s'])).
+
+Lemma step3 : WPT2 ≤ WSeq WPT3a WPT3b.
 Proof.
-  unfold WPT2,WPT3aa,WPT3ab,WPT3b,"≤",semantics.
+  unfold WPT2,WPT3a,WPT3aa,WPT3ab,WPT3b,"≤",semantics.
   simpl.
   apply refineSplit.
-  apply refineAssign.
-  intros; simpl in *.
-  unfold K, Inv.
 Admitted.
 
 Lemma step3' : PT2 ⊑ (PT3a ;; PT3b).
@@ -662,6 +659,9 @@ Lemma step4 : PT3b ⊑ PT4.
 Definition PT5a :=
   Assign (fun s => setP (div2 (varQ s + varR s)) s).
 
+Definition WPT5a :=
+  WAssign P (Div2 (Plus (Var Q) (Var R))).
+
 Definition PT5bThen := 
   [fun s => (varN s < square (varP s)) /\ (varP s < varQ s) /\ Inv s,
    fun _ _ s' => Inv s'].
@@ -678,11 +678,11 @@ Definition PT5b :=
   If (fun s => proj1_sig (nat_lt_ge_bool (varN s) (square (varP s))))
     PT5bThen PT5bElse.
 
+Definition WPT5b :=
+  WIf (Lt (Var N) (Mult (Var P) (Var P))) WPT5bThen WPT5bElse.
 
-Lemma step5 : PT4 ⊑ (PT5a ;; PT5b).
-  unfold PT4.
-  unfold PT5a.
-  unfold PT5b.
+Lemma step5 : WPT4 ≤ WSeq WPT5a WPT5b.
+  unfold "≤",semantics. 
   simpl.
   apply refineSplit.
   apply refineAssign.
@@ -758,7 +758,7 @@ Lemma step5 : PT4 ⊑ (PT5a ;; PT5b).
 
   simpl. 
   unfold PT5bThen,PT5bElse, Inv.
-  apply refineIf.
+  Check refineIf.
   
  
 Admitted.
@@ -784,11 +784,10 @@ Lemma step6Else : PT5bElse ⊑ Assign (fun s => setR (varP s) s).
   split; auto.
 Qed.
 
-
 Theorem result : SPEC ⊑ 
   (
   PT3a ;; 
-  While (PT5a ;; If (fun s => proj1_sig (nat_lt_ge_bool N (square (varP s))))
+  While (PT5a ;; If (fun s => proj1_sig (nat_lt_ge_bool (varN s) (square (varP s))))
                    (Assign (fun s => setQ (varP s) s))
                    (Assign (fun s => setR (varP s) s)))
        (fun X => negb (beq_nat (1 + varR X) (varQ X)))
