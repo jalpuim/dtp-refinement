@@ -310,6 +310,9 @@ Require Import String.
 Require Import Arith.Bool_nat.
 Import Refinement.
 
+Axiom (showNat : nat -> string).
+
+
 Definition setN : nat -> S -> S := fun x s =>
   match s with
     | mkS _ p q r => mkS x p q r
@@ -489,13 +492,32 @@ Fixpoint sp (n: nat) : string :=
    | Datatypes.S n' => " " ++ (sp n')
 end.
 
+Lemma A : forall w1 w2, isExecutable (WSeq w1 w2) -> isExecutable w1.
+  Proof.
+  unfold isExecutable; intros; simpl.
+  destruct H as [H1 H2]; assumption.
+  Qed.
+
+Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
+  match w as w' return (isExecutable w' -> nat -> string) with
+    | WSkip => fun _ _  => ""
+    | WSeq w1 w2 => fun p' i' => toCode w1 (A w1 w2 p') 0
+    | _ => fun _ _ => ""
+  end p indent.
+
+
+
 (* TODO: pass (ident+n) to recursive calls *)
+(* 
+
 Definition toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string.
-  induction w.
+  generalize p indent.
+
+  refine (WhileL_rec (fun w0 : WhileL => isExecutable w0 -> nat -> string) _ _ _ _ _ _ w).
   (* Skip *)
-  apply ((sp indent) ++ "skip").
+  intros; apply ((sp indent) ++ "skip").
   (* Assign *)
-  apply ((sp indent) ++ (identToCode i) ++ " := " ++ (exprToCode e)).
+  intros; apply ((sp indent) ++ (identToCode i) ++ " := " ++ (exprToCode e)).
   (* Seq *)
   simpl in *; destruct p as [p1 p2]; apply IHw1 in p1; apply IHw2 in p2.
   apply (p1 ++ ";\n" ++ p2).
@@ -511,6 +533,10 @@ Definition toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string.
   (* Spec *)
   simpl in *; exfalso; trivial.
   Defined.
+
+Print toCode.
+*)
+
 
 Ltac w2pt_apply t := unfold "≤",semantics; apply t.
 
@@ -534,7 +560,7 @@ Require Import Div2.
 Require Import Even.
 Require Import Arith.
 Require Import Arith.Bool_nat.
-Require Import AuxiliaryProofs.
+(* Require Import AuxiliaryProofs. *)
 Import Refinement.
 Import While.
 
@@ -582,13 +608,16 @@ Definition WPT3aa :=
   WAssign R (EConst 0).
 
 Definition WPT3ab :=
-  WAssign R (Plus (EConst 1) (Var N)).
+  WAssign Q (Plus (EConst 1) (Var N)).
+
+Definition WPT3a := WSeq WPT3aa WPT3ab.
+
 
 Definition PT3b :=
   While Inv (fun X => negb (beq_nat (1 + varR X) (varQ X))).
 
 Definition WPT3b :=
-  WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) WSkip. (* FIXME *)
+  WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) (WSpec [Not Guard /\ Inv, Inv]). (* FIXME *)
 
 Lemma step3 : WPT2 ≤ WSeq WPT3aa (WSeq WPT3ab WPT3b).
 Proof.
@@ -771,3 +800,4 @@ Theorem result : SPEC ⊑
 Qed.
 
 End Example.
+
