@@ -154,15 +154,22 @@ Lemma refineSeq (Pre Mid Post : Pow S) :
     refine_simpl; intros s x s' H; destruct H as [t q]; destruct q; auto.
   Qed.
 
-(* TODO *)
 Lemma refineSeqAssign : forall (f: S -> S) (g: S -> S) (h: S -> S),
   (forall (s : S), h s = g (f s)) -> 
   Assign h ⊑ Assign f ;; Assign g.
 Proof.
   intros.
   unfold Assign,Seq. simpl.
-Admitted.
-
+  assert (d: pre ([fun _ : S => True, fun (s : S) (_ : True) (s' : S) => s' = h s]) ⊂
+             pre ([fun s : S => sig (fun _ : True => forall t : S, t = f s -> True),
+                   fun (s : S) (_ : sig (fun _ : True => forall t : S, t = f s -> True))
+                   (s' : S) => exists t : S, ex (fun _ : t = f s => s' = g t)])).
+  simpl. unfold subset. intros. apply exist. assumption. intros; assumption.
+  apply (Refinement _ _ d).
+  simpl in *. unfold subset in *. intros. inversion H0. inversion H1. rewrite H.
+  rewrite <- x1. rewrite <- H2. reflexivity.
+Qed.
+  
 Lemma seqExtendL (pt1 pt2 : PT) (U : Pow S) (s : S) : 
   extend pt1 (extend pt2 U) s -> extend (Seq pt1 pt2) U s.
   Proof.
@@ -639,25 +646,6 @@ Proof.
      change (Is_false (negb (beq_nat (Datatypes.S (varR s')) (varQ s')))) in Post2.
      intro F; rewrite F in Post2; contradiction.
 Qed.
-  
-
-Lemma step3' : PT2 ⊑ (PT3a ;; PT3b).
-  Proof.
-   apply refineSplit.
-   (* Part a *)
-     unfold K, Inv, PT3a, square; apply refineAssign.
-     simpl; intros; split; auto with arith.
-   (* Part b *)
-     unfold PT3b.
-     assert (d : (pre ([Inv,fun _ _ X => Inv X /\ 1 + varR X = varQ X])) ⊂ pre PT3b).
-     unfold subset; intros; auto.
-     apply (Refinement _ _ d).
-     intros s Pre s' [Post1 Post2]; split; auto.
-     case_eq (beq_nat (Datatypes.S (varR s')) (varQ s')).
-     intro H; apply (beq_nat_true (Datatypes.S (varR s')) (varQ s') H).
-     change (Is_false (negb (beq_nat (Datatypes.S (varR s')) (varQ s')))) in Post2.
-     intro F; rewrite F in Post2; contradiction.
- Qed.
 
 Definition PT4 := 
   [fun X => 1 + varR X < varQ X, fun _ _ X => varR X < varP X < varQ X];;
@@ -783,10 +771,11 @@ Lemma step6Then : PT5bThen ⊑ Assign (fun s => setQ (varP s) s).
   simpl.
   intros s H.
   destruct H as [H1 H2]; destruct H2 as [H2 H3].
-  destruct s. unfold Inv.
+  destruct s as [N P Q R]. unfold Inv.
   simpl in *. destruct H3 as [H3 H4]. destruct H3.
   split. 
-  simpl in *. 
+  simpl in *. unfold square in *.
+
 Admitted.
 
 Lemma step6Else : PT5bElse ⊑ Assign (fun s => setR (varP s) s). 
