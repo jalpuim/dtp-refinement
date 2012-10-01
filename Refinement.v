@@ -154,6 +154,15 @@ Lemma refineSeq (Pre Mid Post : Pow S) :
     refine_simpl; intros s x s' H; destruct H as [t q]; destruct q; auto.
   Qed.
 
+(* TODO *)
+Lemma refineSeqAssign : forall (f: S -> S) (g: S -> S) (h: S -> S),
+  (forall (s : S), h s = g (f s)) -> 
+  Assign h ⊑ Assign f ;; Assign g.
+Proof.
+  intros.
+  unfold Assign,Seq. simpl.
+Admitted.
+
 Lemma seqExtendL (pt1 pt2 : PT) (U : Pow S) (s : S) : 
   extend pt1 (extend pt2 U) s -> extend (Seq pt1 pt2) U s.
   Proof.
@@ -424,20 +433,6 @@ end.
 Definition wrefines w1 w2 := (semantics w1) ⊑ (semantics w2).
 
 Notation "P1 ≤ P2" := (wrefines P1 P2) (at level 80) : type_scope.
-
-(* Law 3.4 *)
-Lemma followAssign : forall (P: Pow S) (Q: forall (s : S), P s -> Pow S) 
-(id: Identifier) (e: Expr),
-  let Q' := (fun s p s' => s' = setIdent id (evalExpr e s) s) in
-  (forall s p, Q' s p ⊂ Q s p) ->
-  Spec ([P , Q]) ≤
-  WSeq (Spec ([P, Q'])) 
-       (WAssign id e).
-Proof.
-  intros P Q id e Q' H.
-  unfold "≤", semantics, Q' in *.
-
-Admitted.
   
 
 Fixpoint isExecutable (w: WhileL) : Prop :=
@@ -624,7 +619,27 @@ Proof.
   unfold WPT2,WPT3a,WPT3aa,WPT3ab,WPT3b,"≤",semantics.
   simpl.
   apply refineSplit.
-Admitted.
+  unfold Assign, K, Inv.
+  apply (refineTrans PT3a).
+  (* Part a *)
+    unfold K, Inv, PT3a, square; apply refineAssign.
+    simpl; intros; split; auto with arith.
+  (* refineTrans *)
+  unfold PT3a,Assign.
+  apply refineSeqAssign.
+  intros; destruct s; simpl; reflexivity.
+  (* Part b *)
+     unfold PT3b.
+     assert (d : (pre ([Inv,fun _ _ X => Inv X /\ 1 + varR X = varQ X])) ⊂ pre PT3b).
+     unfold subset; intros; auto.
+     apply (Refinement _ _ d).
+     intros s Pre s' [Post1 Post2]; split; auto.
+     case_eq (beq_nat (Datatypes.S (varR s')) (varQ s')).
+     intro H; apply (beq_nat_true (Datatypes.S (varR s')) (varQ s') H).
+     change (Is_false (negb (beq_nat (Datatypes.S (varR s')) (varQ s')))) in Post2.
+     intro F; rewrite F in Post2; contradiction.
+Qed.
+  
 
 Lemma step3' : PT2 ⊑ (PT3a ;; PT3b).
   Proof.
