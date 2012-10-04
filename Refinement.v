@@ -1,4 +1,4 @@
- (* TODO: 
+(* TODO: 
   - How to deal with allocation of vars? 
     Maybe its better to handle this from the outset
   - Total vs partial correctness. Should we worry about the 
@@ -51,10 +51,6 @@ Notation "[ p , q ]" := (Predicate p q) (at level 70) : type_scope.
 Ltac refine_simpl := unfold subset, pre, post, extend; simpl; auto.
 
 (*** Guarded command language ***)
-
-Inductive Ty : Set := 
-  | BOOL : Ty
-  | INT : Ty.
 
 (*** Structural laws ***)
 
@@ -251,15 +247,25 @@ Lemma IfExtendR (cond : S -> bool) (thenPt elsePt : PT) (U : Pow S) (s : S) :
   Qed.
 
 
-Definition While (inv : Pow S) (cond : S -> bool) : PT :=
-  let whilePre := fun s => inv s in
-  let whilePost := fun s pres s' => prod (inv s') (Is_false (cond s')) in
+Definition While (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
+(*  let whilePre := fun s => inv s in
+  let whilePost := fun s pres s' => prod (inv s') (Is_false (cond s')) in *)
+  let whilePre := 
+    cond /\ inv -> pre body /\
+    post body -> inv /\ 
+    inv
+    in
+  let whilePost := 
+    inv /\
+    ~cond
+    in
   [ whilePre , whilePost ].
 
 (* Law 7.1 *)
 Lemma refineWhile (inv : Pow S) (cond : S -> bool) : 
-  let pt := [inv , fun _ _ s' => prod (inv s') (Is_false (cond s')) ] in
-  pt ⊑ While inv cond.
+  let pt := [inv , fun _ _ s' => inv s' ] in
+  let body := [inv /\ cond, inv] in
+  pt ⊑ While inv cond body.
   Proof.
     intros; simpl in *.
     refine (Refinement _ _  (fun (s : S)(invs : pre pt s) => invs : pre (While inv cond) s) _).
