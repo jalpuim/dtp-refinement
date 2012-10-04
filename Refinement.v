@@ -510,27 +510,26 @@ Proof. intros; destruct H as [H1 H2]; assumption. Qed.
 Lemma isExecBody : forall inv c b, isExecutable (WWhile inv c b) -> isExecutable b.
 Proof. intros; assumption. Qed.
 
-Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string.
-  refine (match w as w' return (isExecutable w' -> nat -> string) with
-    | WSkip           => fun _ _  => ((sp indent) ++ "skip")
-    | WAssign id exp  => fun _ _ => 
-                         ((sp indent) ++ (identToCode id) ++ " := " ++ (exprToCode exp))
-    | WSeq w1 w2      => fun p' i' => 
-                         (toCode w1 (isExecSeq1 w1 w2 p') i') ++ ";\n" ++ 
-                         (toCode w2 (isExecSeq2 w1 w2 p') i')
-    | WIf c t e       => fun p' i' =>
-                         (sp indent) ++ "if " ++ (bExprToCode c) ++ "\n" ++
-                         (sp indent) ++ "then {\n" ++ 
-                         (toCode t (isExecThen c t e p') (i'+1)) ++ " }\n" ++
-                         (sp indent) ++ "else {\n" ++ 
-                         (toCode e (isExecElse c t e p') (i'+1)) ++ " }"
-    | WWhile inv c b  => fun p' i' =>
-                         (sp indent) ++ "while " ++ (bExprToCode c) ++ "{\n" ++
-                         (sp indent) ++ (toCode b (isExecBody inv c b p') (i'+1)) ++ "}"
-    | Spec pt         => fun p' i' => _
-  end p indent).
-  inversion p'. Qed.
-
+Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
+  match w as w' return (isExecutable w' -> nat -> string) with
+  | WSkip           => fun _ _  => ((sp indent) ++ "skip")
+  | WAssign id exp  => fun _ _ => 
+                       ((sp indent) ++ (identToCode id) ++ " := " ++ (exprToCode exp))
+  | WSeq w1 w2      => fun p' i' => 
+                       (toCode w1 (isExecSeq1 w1 w2 p') i') ++ ";\n" ++ 
+                       (toCode w2 (isExecSeq2 w1 w2 p') i')
+  | WIf c t e       => fun p' i' =>
+                       (sp indent) ++ "if " ++ (bExprToCode c) ++ "\n" ++
+                       (sp indent) ++ "then {\n" ++ 
+                       (toCode t (isExecThen c t e p') (i'+4)) ++ " }\n" ++
+                       (sp indent) ++ "else {\n" ++ 
+                       (toCode e (isExecElse c t e p') (i'+4)) ++ " }"
+  | WWhile inv c b  => fun p' i' =>
+                       (sp indent) ++ "while " ++ (bExprToCode c) ++ "{\n" ++
+                       (sp indent) ++ (toCode b (isExecBody inv c b p') (i'+4)) ++ " }"
+  | Spec pt         => fun p' i' => match p' with 
+                                    end
+  end p indent.
 
 Definition whileExample : WhileL :=
   WSeq WSkip (WSeq (WIf (BConst true) WSkip WSkip) (WAssign P (Plus (Var R) (Var Q)))).
@@ -538,7 +537,7 @@ Definition whileExample : WhileL :=
 Lemma whileExec : isExecutable whileExample.
   Proof. unfold isExecutable; simpl; auto. Qed.
 
-Eval compute in (toCode whileExample whileExec 0).
+Compute (toCode whileExample whileExec 0).
 
 Ltac w2pt_apply t := unfold "≤",semantics; apply t.
 
@@ -588,7 +587,8 @@ Lemma step1 : WSPEC ≤ WPT1.
     intros X tt s [H1 H2]; simpl in *; rewrite H2; apply H1.    
   Qed.
 
-Definition PT2 := [fun _ => True , K Inv] ;; [Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X].
+Definition PT2 := [fun _ => True , K Inv] ;; 
+                  [Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X].
 
 Definition WPT2 := WSeq (Spec ([fun _ => True , K Inv])) (Spec ([Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X])).
 
@@ -659,12 +659,16 @@ Definition WPT4 :=
 Lemma step4 : WPT3b ≤ WPT4.
   unfold WPT3b,WPT4,"≤",semantics.
   simpl.
+  (* apply refineSeq. *)
 Admitted.
+
+Lemma step4_ : [(fun _ => True),()] ⊑ PT4.
 
 Lemma step4' : PT3b ⊑ PT4.
   (* proceed by refining body of while? *)
   Admitted.
-  
+ 
+
 Definition PT5a :=
   Assign (fun s => setP (div2 (varQ s + varR s)) s).
 
@@ -794,7 +798,30 @@ Lemma step6Else : PT5bElse ⊑ Assign (fun s => setR (varP s) s).
   split; auto.
 Qed.
 
-Theorem result : SPEC ⊑ 
+(* FIXME (WSkip) *)
+Theorem result : WSPEC ≤ (
+  WSeq WPT3a
+  (WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) WSkip)
+  ).
+Proof.
+  apply (wrefineTrans WPT1). apply step1.
+  apply (wrefineTrans WPT2). apply step2.
+  apply (wrefineTrans (WSeq WPT3a WPT3b)). apply step3.
+  apply refineRefl.
+Qed.
+
+Definition prgrm := WSeq WPT3a
+  (WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) WSkip).
+
+Lemma prgrmProof : isExecutable prgrm.
+Proof.  
+  unfold prgrm,isExecutable; simpl; auto.
+Qed.
+
+Require Import String.
+Compute (toCode prgrm prgrmProof 0).
+
+Theorem result' : SPEC ⊑ 
   (
   PT3a ;; 
   While (PT5a ;; If (fun s => proj1_sig (nat_lt_ge_bool (varN s) (square (varP s))))
