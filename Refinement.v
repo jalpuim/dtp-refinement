@@ -246,7 +246,13 @@ Lemma IfExtendR (cond : S -> bool) (thenPt elsePt : PT) (U : Pow S) (s : S) :
     intros; apply (projT2 (H2 I)); destruct H as [_ A]; apply A.
   Qed.
 
+Definition While (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
+  let whilePre := (fun s => ((Is_true (cond s) /\ inv s) -> pre body s) /\ inv s /\ 
+                            (forall (p: pre body s) (s': S), post body s p s' -> inv s')) in
+  let whilePost := (fun _ _ s' => inv s' /\ ~ Is_true (cond s')) in
+  [ whilePre , whilePost ].
 
+(*
 Definition While (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
 (*  let whilePre := fun s => inv s in
   let whilePost := fun s pres s' => prod (inv s') (Is_false (cond s')) in *)
@@ -259,25 +265,35 @@ Definition While (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
     inv /\
     ~cond
     in
-  [ whilePre , whilePost ].
+  [ whilePre , whilePost ].*)
 
 (* Law 7.1 *)
 Lemma refineWhile (inv : Pow S) (cond : S -> bool) : 
   let pt := [inv , fun _ _ s' => inv s' ] in
-  let body := [inv /\ cond, inv] in
+  let body := [fun s => inv s /\ Is_true (cond s), (fun _ _ s => inv s)] in
   pt ⊑ While inv cond body.
   Proof.
     intros; simpl in *.
-    refine (Refinement _ _  (fun (s : S)(invs : pre pt s) => invs : pre (While inv cond) s) _).
-    simpl; intros s pres s' ; auto.
+    assert (d: pre pt ⊂ pre (While inv cond body)).
+    unfold subset. unfold pt,While. simpl. intros. split. 
+    intros H1. apply and_comm in H1. assumption.
+    split. assumption. intros. assumption. 
+    apply (Refinement _ _ d).
+    intros. unfold subset. simpl. intros. destruct H. assumption.
   Qed.
 
-Lemma WhileExtend (inv : Pow S) (cond : S -> bool) (U : Pow S) (s : S) :
-  extend (While inv cond) U s -> 
+Lemma WhileExtend (inv : Pow S) (cond : S -> bool) (U : Pow S) (s : S) (body : PT) :
+  extend (While inv cond body) U s -> 
     (inv s) * (forall s, (inv s * Is_false (cond s)) -> U s).
   Proof.
-    unfold extend, subset; simpl; intros [I H]; split; auto. 
-  Qed.
+    unfold extend, subset; simpl; intros [[H1 [H2 H3]] H4]; split. assumption.
+    intros. inversion H as [H5 H6].
+    assert (Ha: forall b, Is_false b -> ~ Is_true b).
+    unfold Is_false,Is_true. destruct b; unfold not; trivial.
+    apply Ha in H6. 
+    assert (H': (inv s0 /\ ~ Is_true (cond s0))) by (split; [apply H5 | apply H6]).
+    apply H4 in H'. assumption.
+Qed.
 
 (*TODO WhileExtendL and WhileExtendR *)
 
@@ -440,7 +456,7 @@ Fixpoint semantics (w: WhileL) : PT :=
   | WAssign id exp => Assign (fun s => (setIdent id (evalExpr exp s)) s)
   | WSeq st1 st2   => Seq (semantics st1) (semantics st2)
   | WIf c t e      => If (fun s => (evalBExpr c s)) (semantics t) (semantics e)
-  | WWhile inv c b => While inv (fun s => (evalBExpr c s))
+  | WWhile inv c b => While inv (fun s => (evalBExpr c s)) (semantics b)
   | Spec pt        => pt
 end.
 
