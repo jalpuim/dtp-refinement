@@ -662,8 +662,6 @@ Lemma step4 : WPT3b ≤ WPT4.
   (* apply refineSeq. *)
 Admitted.
 
-Lemma step4_ : [(fun _ => True),()] ⊑ PT4.
-
 Lemma step4' : PT3b ⊑ PT4.
   (* proceed by refining body of while? *)
   Admitted.
