@@ -287,12 +287,8 @@ Lemma WhileExtend (inv : Pow S) (cond : S -> bool) (U : Pow S) (s : S) (body : P
     (inv s) * (forall s, (inv s * Is_false (cond s)) -> U s).
   Proof.
     unfold extend, subset; simpl; intros [[H1 [H2 H3]] H4]; split. assumption.
-    intros. inversion H as [H5 H6].
-    assert (Ha: forall b, Is_false b -> ~ Is_true b).
-    unfold Is_false,Is_true. destruct b; unfold not; trivial.
-    apply Ha in H6. 
-    assert (H': (inv s0 /\ ~ Is_true (cond s0))) by (split; [apply H5 | apply H6]).
-    apply H4 in H'. assumption.
+    intros. inversion H as [H5 H6]. apply H4. split.
+    apply H5. unfold not,Is_true. unfold Is_false in H6. destruct (cond s0); auto.
 Qed.
 
 (*TODO WhileExtendL and WhileExtendR *)
