@@ -247,25 +247,16 @@ Lemma IfExtendR (cond : S -> bool) (thenPt elsePt : PT) (U : Pow S) (s : S) :
   Qed.
 
 Definition While (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
-  let whilePre := (fun s => ((Is_true (cond s) /\ inv s) -> pre body s) /\ inv s /\ 
-                            (forall (p: pre body s) (s': S), post body s p s' -> inv s')) in
-  let whilePost := (fun _ _ s' => inv s' /\ ~ Is_true (cond s')) in
+  let whilePre := (fun s =>   (* The invariant should hold initially *)
+                             inv s /\ 
+                              (* If we enter the loop, the precondition of the body should hold *)
+                            { H : (forall s, Is_true (cond s) /\ inv s -> pre body s) &
+                              (* The loop body should preserve the invariant *)
+                            (forall s s' (t : Is_true (cond s) /\ inv s), post body s (H s t)  s' -> inv s')}) 
+                              
+  in
+  let whilePost := (fun _ _ s' => inv s' /\ Is_false (cond s')) in
   [ whilePre , whilePost ].
-
-(*
-Definition While (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
-(*  let whilePre := fun s => inv s in
-  let whilePost := fun s pres s' => prod (inv s') (Is_false (cond s')) in *)
-  let whilePre := 
-    cond /\ inv -> pre body /\
-    post body -> inv /\ 
-    inv
-    in
-  let whilePost := 
-    inv /\
-    ~cond
-    in
-  [ whilePre , whilePost ].*)
 
 (* Law 7.1 *)
 Lemma refineWhile (inv : Pow S) (cond : S -> bool) : 
@@ -275,24 +266,43 @@ Lemma refineWhile (inv : Pow S) (cond : S -> bool) :
   Proof.
     intros; simpl in *.
     assert (d: pre pt ⊂ pre (While inv cond body)).
-    unfold subset. unfold pt,While. simpl. intros. split. 
-    intros H1. apply and_comm in H1. assumption.
-    split. assumption. intros. assumption. 
+    unfold subset, pt,While; simpl; intros; split; [assumption | ].
+    split.
+    intros s' H1. 
+    destruct H1; split; assumption.
+    intros s' s'' [H1 H2] H3; assumption.
     apply (Refinement _ _ d).
-    intros. unfold subset. simpl. intros. destruct H. assumption.
-  Qed.
-
-Lemma WhileExtend (inv : Pow S) (cond : S -> bool) (U : Pow S) (s : S) (body : PT) :
-  extend (While inv cond body) U s -> 
-    (inv s) * (forall s, (inv s * Is_false (cond s)) -> U s).
-  Proof.
-    unfold extend, subset; simpl; intros [[H1 [H2 H3]] H4]; split. assumption.
-    intros. inversion H as [H5 H6]. apply H4. split.
-    apply H5. unfold not,Is_true. unfold Is_false in H6. destruct (cond s0); auto.
+    intros s PreS s' [H1 H2].
+    assumption.
 Qed.
 
-(*TODO WhileExtendL and WhileExtendR *)
+Definition WhileSemantics  (inv : Pow S) (cond : S -> bool) (body : PT) (U : Pow S) (s : S) : Type
+  := inv s 
+    /\ (forall s, Is_true (cond s) /\ inv s -> extend body inv s)
+    /\ (forall s, Is_false (cond s) /\ inv s -> U s).
 
+Lemma WhileExtendL (inv : Pow S) (cond : S -> bool) (body : PT) (U : Pow S) (s : S) :
+  extend (While inv cond body) U s -> WhileSemantics inv cond body U s.
+  Proof.
+    unfold extend; simpl; intros [[H1 [H2 H3] H4 ]].
+    split; [ assumption | split].
+    - intros s' [H5 H6].
+      unfold extend; exists (H2 s' (conj H5 H6)); intros s'' H7; eapply H3; exact H7.
+    - intros s' [A B]; apply H4; split; try assumption.
+  Qed.
+
+Lemma WhileExtendR (inv : Pow S) (cond : S -> bool) (body : PT) (U : Pow S) (s : S) :
+  WhileSemantics inv cond body U s ->
+    extend (While inv cond body) U s.
+  Proof.
+    unfold extend; intros [I [T F]]; simpl in *.
+    split; [split; [assumption | ] | ].
+    set (H := fun s Hs => projT1 (T s Hs)); exists H.
+    intros; eapply (projT2 (T s0 t)); unfold H in *; assumption.
+    intros s' [H1 H2]; apply F; split; assumption.
+Qed.
+    
+    
 Definition refineTrans (pt2 pt1 pt3 : PT) : 
   pt1 ⊑ pt2 -> pt2 ⊑ pt3 -> pt1 ⊑ pt3.
     intros [pre12 post12] [pre23 post23].
