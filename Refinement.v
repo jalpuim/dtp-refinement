@@ -247,7 +247,6 @@ Lemma IfExtendR (cond : S -> bool) (thenPt elsePt : PT) (U : Pow S) (s : S) :
   Qed.
 
 Definition While (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
-<<<<<<< HEAD
   let whilePre := (fun s =>   (* The invariant should hold initially *)
                              inv s /\ 
                               (* If we enter the loop, the precondition of the body should hold *)
@@ -256,10 +255,6 @@ Definition While (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
                             (forall s s' (t : Is_true (cond s) /\ inv s), post body s (H s t)  s' -> inv s')}) 
                               
   in
-=======
-  let whilePre := (fun s => ((Is_true (cond s) /\ inv s) -> pre body s) /\ inv s /\ 
-                            (forall (p: pre body s) (s': S), post body s p s' -> inv s')) in
->>>>>>> Slight simplification.
   let whilePost := (fun _ _ s' => inv s' /\ Is_false (cond s')) in
   [ whilePre , whilePost ].
 
@@ -300,17 +295,11 @@ Lemma WhileExtendR (inv : Pow S) (cond : S -> bool) (body : PT) (U : Pow S) (s :
   WhileSemantics inv cond body U s ->
     extend (While inv cond body) U s.
   Proof.
-<<<<<<< HEAD
     unfold extend; intros [I [T F]]; simpl in *.
     split; [split; [assumption | ] | ].
     set (H := fun s Hs => projT1 (T s Hs)); exists H.
     intros; eapply (projT2 (T s0 t)); unfold H in *; assumption.
     intros s' [H1 H2]; apply F; split; assumption.
-=======
-    unfold extend, subset; simpl; intros [[H1 [H2 H3]] H4]; split. assumption.
-    intros. inversion H as [H5 H6]. apply H4. split.
-    apply H5. assumption.
->>>>>>> Slight simplification.
 Qed.
     
     
