@@ -252,8 +252,7 @@ Definition While (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
                               (* If we enter the loop, the precondition of the body should hold *)
                             { H : (forall s, Is_true (cond s) /\ inv s -> pre body s) &
                               (* The loop body should preserve the invariant *)
-                            (forall s s' (t : Is_true (cond s) /\ inv s), post body s (H s t)  s' -> inv s')}) 
-                              
+                            (forall s s' (t : Is_true (cond s) /\ inv s), post body s (H s t)  s' -> inv s')})                          
   in
   let whilePost := (fun _ _ s' => inv s' /\ Is_false (cond s')) in
   [ whilePre , whilePost ].
@@ -642,19 +641,23 @@ Definition WPT3ab :=
 Definition WPT3a := WSeq WPT3aa WPT3ab.
 
 Definition PT3b :=
-  While Inv (fun X => negb (beq_nat (1 + varR X) (varQ X))).
+  While Inv (fun X => negb (beq_nat (1 + varR X) (varQ X)))
+        ([(fun s => Inv s /\ Is_true (negb (beq_nat (1 + varR s) (varQ s)))),
+          (fun _ _ s' => Inv s')]).
 
+Definition WBody := 
+  Spec ([(fun s => Inv s /\ Is_true (negb (beq_nat (1 + varR s) (varQ s)))),
+          (fun _ _ s' => Inv s')]).  
 
 Definition WPT3b :=
   let guard := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) in
-  WWhile Inv guard (Spec ([fun s => evalBExpr guard s = true /\ Inv s, 
-                           fun _ _ s' => Inv s'])).
+  WWhile Inv guard WBody.
 
 Lemma step3 : WPT2 ≤ WSeq WPT3a WPT3b.
 Proof.
   unfold WPT2,WPT3a,WPT3aa,WPT3ab,WPT3b,"≤",semantics.
-  simpl.
   apply refineSplit.
+  simpl.
   unfold Assign, K, Inv.
   apply (refineTrans PT3a).
   (* Part a *)
@@ -665,9 +668,13 @@ Proof.
   apply refineSeqAssign.
   intros; destruct s; simpl; reflexivity.
   (* Part b *)
-     unfold PT3b.
-     assert (d : (pre ([Inv,fun _ _ X => Inv X /\ 1 + varR X = varQ X])) ⊂ pre PT3b).
-     unfold subset; intros; auto.
+     (* FIXME: use refineWhile? *)
+     assert (d: pre ([Inv, fun (s: S) (_: Inv s) (X: S) => Inv X /\ 1 + varR X = varQ X])
+                ⊂ pre (semantics WPT3b)).
+     unfold WPT3b,subset,pre; simpl; intros; split; try assumption.
+     split. 
+     split; inversion H0; assumption.
+     intros; assumption.
      apply (Refinement _ _ d).
      intros s Pre s' [Post1 Post2]; split; auto.
      case_eq (beq_nat (Datatypes.S (varR s')) (varQ s')).
@@ -681,20 +688,156 @@ Definition PT4 :=
   [fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X].
 
 Definition WPT4 :=
-  WSeq (Spec ([fun X => 1 + varR X < varQ X, fun _ _ X => varR X < varP X < varQ X]))
+  WSeq (Spec ([fun X => 1 + varR X < varQ X /\ Inv X, 
+               fun _ _ X => varR X < varP X < varQ X /\ Inv X]))
        (Spec ([fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X])).
 
-Lemma step4 : WPT3b ≤ WPT4.
+Axiom lt_n_sq : forall (m n : nat), m < n -> m * m < n * n. 
+
+Axiom lt_sq_n : forall (m n : nat), m * m < n * n -> m < n.
+
+Lemma step4 : WBody ≤ WPT4.
+  unfold WPT3b,WPT4,"≤",semantics; simpl.
+
+  assert (d: pre (semantics WBody) ⊂ pre (semantics WPT4)).
+  unfold subset,pre,semantics,WBody,WPT4.
+  simpl; intros.
+  split. 
+  inversion H as [H1 H2]; inversion H1 as [H3 H4].
+  split. 
+  unfold square in *; destruct s as [N P Q R]; unfold Inv in *; simpl in *.
+  unfold Is_true,negb in H2.
+  remember (if match Q with
+             | 0 => false
+             | Datatypes.S m1 => beq_nat R m1
+             end
+          then false
+          else true) as e.
+  destruct e; induction Q as [|Q HQ]. 
+  unfold square in H4; simpl in H; inversion H4.
+  remember (beq_nat R Q) as beq; destruct beq; inversion Heqe. 
+  symmetry in Heqbeq; apply beq_nat_false in Heqbeq.
+  unfold not in Heqbeq; clear H2; clear Heqe.
+  unfold square in *.
+  apply le_lt_trans with (p:=Datatypes.S Q * Datatypes.S Q) in H3.
+  apply lt_sq_n in H3; unfold "<" in H3; inversion H3. 
+  exfalso; apply Heqbeq; assumption.
+  subst; unfold "<"; apply le_n_S; assumption.
+  assumption.
+  exfalso; assumption.
+  exfalso; assumption.
+  assumption.
+  intros s' [H1 H2]; inversion H as [H3 H4]; split; assumption.
+
+  apply (Refinement _ _ d).
+  intros s PreS; unfold post,subset in *; simpl in *.
+  intros; inversion H as [x [H1 x']]; assumption.
+Qed.
+
+(* FIXME: Admitted but should be provable *)
+Lemma refineBody : forall (inv : Pow S) (cond : S -> bool) (bodyL bodyR : PT),
+  bodyL ⊑ bodyR ->
+  While inv cond bodyL ⊑ While inv cond bodyR.
+Proof.
+  intros.
+  inversion H.
+  assert (a: pre (While inv cond bodyL) ⊂ pre (While inv cond bodyR)).
+  unfold subset; simpl.
+  intros.
+  split.
+  inversion H1; assumption.
+  inversion H1 as [H2 [H3 H4]].
+  unfold subset in d.
+
+  Focus 2.
+  apply (Refinement _ _ a).
+  intros.
+  unfold post,subset,While in *.
+  simpl in *.
+  intros; assumption.
+Admitted.  
+  
+(* FIXME: Restricted to Spec *)
+Lemma refineBody' : forall (inv : Pow S) (cond : BExpr) (ptL ptR : PT),
+  let bodyL := Spec ptL in
+  let bodyR := Spec ptR in
+  bodyL ≤ bodyR -> 
+  WWhile inv cond bodyL ≤ WWhile inv cond bodyR.
+Proof.
+  unfold "≤",semantics. 
+  intros. 
+  apply refineBody.
+  assumption.
+Qed.
+
+
+Lemma step4' : WPT3b ≤ WPT4.
   unfold WPT3b,WPT4,"≤",semantics.
   simpl.
-  (* apply refineSeq. *)
+  assert (d: pre (semantics WPT3b) ⊂ pre (semantics WPT4)).
+  unfold pre,subset,semantics,WPT3b,WPT4; simpl.
+  intros s [H1 [H2 H3]].
+  unfold Inv in *.
+  split.
+  split.
+  unfold square in *.
+  destruct H1 as [H4 H5].
+  assert (Ha: Is_true
+         (negb
+            match match s with
+                  | {| varQ := q |} => q
+                  end with
+            | 0 => false
+            | Datatypes.S m1 =>
+                beq_nat match s with
+                        | {| varR := r |} => r
+                        end m1
+            end) /\ varR s * varR s <= varN s < varQ s * varQ s ->
+       varR s * varR s <= varN s < varQ s * varQ s /\
+       Is_true
+         (negb
+            match varQ s with
+            | 0 => false
+            | Datatypes.S m1 => beq_nat (varR s) m1
+            end)) by (apply H2).
+  clear H2 H3.
+  destruct s as [N P Q R]; simpl in *.  
+  unfold Is_true,negb in Ha.
+  remember (if match Q with
+             | 0 => false
+             | Datatypes.S m1 => beq_nat R m1
+             end
+          then false
+          else true) as e.
+  destruct e; destruct Q as [|Q]. 
+  simpl in H5; inversion H5.
+  remember (beq_nat R Q) as beq; destruct beq; inversion Heqe. 
+  symmetry in Heqbeq; apply beq_nat_false in Heqbeq.
+  unfold not in Heqbeq.
+  apply le_lt_trans with (p:=Datatypes.S Q * Datatypes.S Q) in H4.
+  apply lt_sq_n in H4; unfold "<" in H4; inversion H4. 
+  exfalso; apply Heqbeq; assumption.
+  subst; unfold "<"; apply le_n_S; assumption.
+  assumption.
+
+  simpl in H5; inversion H5.
+
+  Focus 4.
+  apply (Refinement _ _ d).
+  intros s PreS; unfold post,subset in *; simpl in *.
+  intros. 
+  split.
+  inversion H as [x [H1 x']]; assumption.
+  clear d.
+  inversion PreS as [H1 [H2 H3]].
+
+
 Admitted.
 
-Lemma step4' : PT3b ⊑ PT4.
+Lemma step4'' : PT3b ⊑ PT4.
   (* proceed by refining body of while? *)
   Admitted.
  
-
 Definition PT5a :=
   Assign (fun s => setP (div2 (varQ s + varR s)) s).
 
@@ -730,7 +873,7 @@ Lemma step5 : WPT4 ≤ WSeq WPT5a WPT5b.
   split.
   destruct s.
   simpl in *.
-
+(*
  (** even-odd approach **)
   assert (Ha: even varR0 \/ odd varR0).
   apply even_or_odd. destruct Ha as [R0even|R0odd].
@@ -797,12 +940,36 @@ Lemma step5 : WPT4 ≤ WSeq WPT5a WPT5b.
 
   simpl. 
   unfold PT5bThen,PT5bElse, Inv.
-  Check refineIf.
-  
- 
+  (* FIXME: use refineIf ? *)
+  assert (d: pre ([fun X : S => varR X < varP X < varQ X /\ square (varR X) <= varN X < square (varQ X),
+             fun (s : S) (_ : varR s < varP s < varQ s /\ square (varR s) <= varN s < square (varQ s)) 
+             (X : S) => square (varR X) <= varN X < square (varQ X)])
+             ⊂ pre (semantics WPT5b)).
+  unfold pre,semantics,subset,WPT5b; simpl; intros.
+  split.
+  intros; split. destruct H as [[H1 H2] [H3 H4]].
+  destruct s as [N P Q R]. simpl in *.
+  unfold Is_true in H0.
+  remember (proj1_sig (nat_lt_ge_bool N (P * P))) as e; destruct e; destruct H0.
+ *)
 Admitted.
 
-Lemma step6Then : PT5bThen ⊑ Assign (fun s => setQ (varP s) s). 
+Lemma step6Then : WPT5bThen ≤ WAssign Q (Var P).
+Proof.
+  unfold WPT5bThen,"≤",semantics.
+  apply refineAssign.
+  simpl.
+  intros s H.
+  unfold Inv in *.
+  destruct H as [H1 [H2 [H3 H4]]].
+  destruct s as [N P Q R].
+  simpl in *.
+  split.
+  assumption.
+  assumption.
+Qed.
+
+Lemma step6Then' : PT5bThen ⊑ Assign (fun s => setQ (varP s) s). 
   apply refineAssign.
   simpl.
   intros s H.
@@ -814,7 +981,19 @@ Lemma step6Then : PT5bThen ⊑ Assign (fun s => setQ (varP s) s).
 
 Admitted.
 
-Lemma step6Else : PT5bElse ⊑ Assign (fun s => setR (varP s) s). 
+Lemma step6Else : WPT5bElse ≤ WAssign R (Var P).
+Proof.
+  unfold WPT5bElse,"≤",semantics.
+  apply refineAssign.
+  simpl.
+  intros s H.
+  destruct H as [H1 [H2 [H3 H4]]].
+  destruct s. unfold Inv in *.
+  simpl in *.
+  split; auto.
+Qed.
+
+Lemma step6Else' : PT5bElse ⊑ Assign (fun s => setR (varP s) s). 
   apply refineAssign.
   simpl.
   intros s H.
@@ -824,16 +1003,16 @@ Lemma step6Else : PT5bElse ⊑ Assign (fun s => setR (varP s) s).
   split; auto.
 Qed.
 
-(* FIXME (WSkip) *)
 Theorem result : WSPEC ≤ (
   WSeq WPT3a
-  (WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) WSkip)
+  (WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) WBody)
   ).
 Proof.
   apply (wrefineTrans WPT1). apply step1.
   apply (wrefineTrans WPT2). apply step2.
   apply (wrefineTrans (WSeq WPT3a WPT3b)). apply step3.
-  apply refineRefl.
+  apply (wrefineTrans WPT3).
+
 Qed.
 
 Definition prgrm := WSeq WPT3a
