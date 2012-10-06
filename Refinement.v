@@ -739,23 +739,25 @@ Lemma refineBody : forall (inv : Pow S) (cond : S -> bool) (bodyL bodyR : PT),
   bodyL ⊑ bodyR ->
   While inv cond bodyL ⊑ While inv cond bodyR.
 Proof.
-  intros.
-  inversion H.
+  intros inv cond bodyL bodyR [Pre Post].
   assert (a: pre (While inv cond bodyL) ⊂ pre (While inv cond bodyR)).
-  unfold subset; simpl.
-  intros.
-  split.
-  inversion H1; assumption.
-  inversion H1 as [H2 [H3 H4]].
-  unfold subset in d.
+  unfold subset; simpl; intros s [Inv [H1 H2]]; split.
+  assumption.
+  (* assert (E:  forall s0 : S, Is_true (cond s0) /\ inv s0 -> pre bodyR s0). *)
+  set (E := fun s0 H => Pre s0 (H1 _ H)).
+  exists E.
+  intros s0 s' P Q.
+  eapply H2.
+  apply Post.
+  unfold E in Q.
+  exact Q.
 
-  Focus 2.
   apply (Refinement _ _ a).
   intros.
   unfold post,subset,While in *.
   simpl in *.
   intros; assumption.
-Admitted.  
+Qed.
   
 (* FIXME: Restricted to Spec *)
 Lemma refineBody' : forall (inv : Pow S) (cond : BExpr) (ptL ptR : PT),
