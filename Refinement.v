@@ -355,8 +355,6 @@ Require Import Div2.
 Require Import Show.
 Import Refinement.
 
-Axiom (showNat : nat -> string).
-
 Definition setN : nat -> S -> S := fun x s =>
   match s with
     | mkS _ p q r => mkS x p q r
@@ -493,7 +491,7 @@ Definition identToCode (ident: Identifier) : string :=
 Fixpoint exprToCode (e: Expr) : string :=
   match e with
   | Var n     => identToCode n
-  | EConst n  => print_nat n
+  | EConst n  => Show.print_nat n
   | Plus x y  => exprToCode x ++ " + " ++ exprToCode y
   | Minus x y => exprToCode x ++ " - " ++ exprToCode y
   | Mult x y  => exprToCode x ++ " * " ++ exprToCode y
@@ -734,7 +732,6 @@ Lemma step4 : WBody ≤ WPT4.
   intros; inversion H as [x [H1 x']]; assumption.
 Qed.
 
-(* FIXME: Admitted but should be provable *)
 Lemma refineBody : forall (inv : Pow S) (cond : S -> bool) (bodyL bodyR : PT),
   bodyL ⊑ bodyR ->
   While inv cond bodyL ⊑ While inv cond bodyR.
@@ -759,86 +756,31 @@ Proof.
   intros; assumption.
 Qed.
   
-(* FIXME: Restricted to Spec *)
-Lemma refineBody' : forall (inv : Pow S) (cond : BExpr) (ptL ptR : PT),
-  let bodyL := Spec ptL in
-  let bodyR := Spec ptR in
-  bodyL ≤ bodyR -> 
+Lemma refineBody'' : forall (inv : Pow S) (cond : BExpr) (bodyL bodyR : WhileL),
+  bodyL ≤ bodyR ->
   WWhile inv cond bodyL ≤ WWhile inv cond bodyR.
 Proof.
-  unfold "≤",semantics. 
-  intros. 
-  apply refineBody.
+  unfold "≤".
+  intros.
+  assert (d: pre (semantics (WWhile inv cond bodyL)) ⊂
+             pre (semantics (WWhile inv cond bodyR))).
+  unfold subset; simpl; intros s [Inv [H1 H2]]; split.
   assumption.
-Qed.
+  inversion H as [Pre Post].
+  set (E := fun s0 H => (Pre s0 (H1 _ H))).
+  exists E.
+  intros s0 s' P Q.
+  eapply H2.
+  apply Post.
+  unfold E in Q.
+  exact Q.
 
-
-Lemma step4' : WPT3b ≤ WPT4.
-  unfold WPT3b,WPT4,"≤",semantics.
-  simpl.
-  assert (d: pre (semantics WPT3b) ⊂ pre (semantics WPT4)).
-  unfold pre,subset,semantics,WPT3b,WPT4; simpl.
-  intros s [H1 [H2 H3]].
-  unfold Inv in *.
-  split.
-  split.
-  unfold square in *.
-  destruct H1 as [H4 H5].
-  assert (Ha: Is_true
-         (negb
-            match match s with
-                  | {| varQ := q |} => q
-                  end with
-            | 0 => false
-            | Datatypes.S m1 =>
-                beq_nat match s with
-                        | {| varR := r |} => r
-                        end m1
-            end) /\ varR s * varR s <= varN s < varQ s * varQ s ->
-       varR s * varR s <= varN s < varQ s * varQ s /\
-       Is_true
-         (negb
-            match varQ s with
-            | 0 => false
-            | Datatypes.S m1 => beq_nat (varR s) m1
-            end)) by (apply H2).
-  clear H2 H3.
-  destruct s as [N P Q R]; simpl in *.  
-  unfold Is_true,negb in Ha.
-  remember (if match Q with
-             | 0 => false
-             | Datatypes.S m1 => beq_nat R m1
-             end
-          then false
-          else true) as e.
-  destruct e; destruct Q as [|Q]. 
-  simpl in H5; inversion H5.
-  remember (beq_nat R Q) as beq; destruct beq; inversion Heqe. 
-  symmetry in Heqbeq; apply beq_nat_false in Heqbeq.
-  unfold not in Heqbeq.
-  apply le_lt_trans with (p:=Datatypes.S Q * Datatypes.S Q) in H4.
-  apply lt_sq_n in H4; unfold "<" in H4; inversion H4. 
-  exfalso; apply Heqbeq; assumption.
-  subst; unfold "<"; apply le_n_S; assumption.
-  assumption.
-
-  simpl in H5; inversion H5.
-
-  Focus 4.
   apply (Refinement _ _ d).
-  intros s PreS; unfold post,subset in *; simpl in *.
-  intros. 
-  split.
-  inversion H as [x [H1 x']]; assumption.
-  clear d.
-  inversion PreS as [H1 [H2 H3]].
-
-
-Admitted.
-
-Lemma step4'' : PT3b ⊑ PT4.
-  (* proceed by refining body of while? *)
-  Admitted.
+  intros.
+  unfold post,pre,subset in *.
+  simpl in *.
+  intros; assumption.
+Qed.
  
 Definition PT5a :=
   Assign (fun s => setP (div2 (varQ s + varR s)) s).
@@ -875,7 +817,9 @@ Lemma step5 : WPT4 ≤ WSeq WPT5a WPT5b.
   split.
   destruct s.
   simpl in *.
-(*
+  split.
+  inversion H as [H1 H2].
+
  (** even-odd approach **)
   assert (Ha: even varR0 \/ odd varR0).
   apply even_or_odd. destruct Ha as [R0even|R0odd].
@@ -886,7 +830,7 @@ Lemma step5 : WPT4 ≤ WSeq WPT5a WPT5b.
   (* varR0 even, varQ0 even *)
   rewrite <- div2_double at 1. unfold "*". rewrite <- plus_n_O.
   rewrite even_plus_div2. rewrite even_plus_div2. apply plus_lt_compat_r.
-  apply even_even_lt_div2. split; trivial. apply le_Sn_le in H. exact H. trivial. trivial.
+  apply even_even_lt_div2. split; trivial. apply le_Sn_le in H1. exact H1. trivial. trivial.
 
   (* varR0 even, varQ0 odd *)
   rewrite plus_comm. rewrite even_plus_div2. rewrite plus_comm. 
@@ -904,10 +848,10 @@ Lemma step5 : WPT4 ≤ WSeq WPT5a WPT5b.
   (* varR0 odd, varQ0 odd *)
   rewrite <- div2_double at 1. unfold "*". rewrite <- plus_n_O. rewrite odd_odd_plus_div2. 
   rewrite odd_odd_plus_div2. apply lt_n_S. apply plus_lt_compat_r. apply odd_odd_lt_div2. 
-  split; trivial. apply le_Sn_le in H. trivial. split; trivial. split; trivial.
+  split; trivial. apply le_Sn_le in H1. trivial. split; trivial. split; trivial.
   (** end goal **)
 
-  destruct s. simpl in *.
+  inversion H as [H1 H2].
 
   (** even-odd approach **)
   assert (Ha: even varR0 \/ odd varR0). apply even_or_odd. destruct Ha as [R0even|R0odd].
@@ -917,7 +861,7 @@ Lemma step5 : WPT4 ≤ WSeq WPT5a WPT5b.
   (* varR0 even, varQ0 even *)
   rewrite <- div2_double. unfold "*". rewrite <- plus_n_O. rewrite even_plus_div2. 
   rewrite even_plus_div2. rewrite plus_comm. apply plus_lt_compat_r. 
-  apply even_even_lt_div2. split; trivial. apply le_Sn_le in H. exact H. trivial. trivial.
+  apply even_even_lt_div2. split; trivial. apply le_Sn_le in H1. exact H1. trivial. trivial.
 
   (* varR0 even, varQ0 odd *)
   rewrite <- div2_double. unfold "*". rewrite <- plus_n_O. rewrite plus_comm. 
@@ -936,24 +880,54 @@ Lemma step5 : WPT4 ≤ WSeq WPT5a WPT5b.
   (* varR0 odd, varQ0 odd *)
   rewrite <- div2_double. unfold "*". rewrite <- plus_n_O. rewrite odd_odd_plus_div2. 
   rewrite odd_odd_plus_div2. apply lt_n_S. rewrite plus_comm. apply plus_lt_compat_r. 
-  apply odd_odd_lt_div2. split; trivial. apply le_Sn_le in H. trivial. split; trivial. 
+  apply odd_odd_lt_div2. split; trivial. apply le_Sn_le in H1. trivial. split; trivial. 
   split; trivial.
   (** end goal **)
 
-  simpl. 
+  inversion H as [H1 [H2 H3]].
+  unfold Inv in *.
+  split; destruct s as [N P Q R]; simpl in *; assumption.  
+
   unfold PT5bThen,PT5bElse, Inv.
   (* FIXME: use refineIf ? *)
   assert (d: pre ([fun X : S => varR X < varP X < varQ X /\ square (varR X) <= varN X < square (varQ X),
              fun (s : S) (_ : varR s < varP s < varQ s /\ square (varR s) <= varN s < square (varQ s)) 
              (X : S) => square (varR X) <= varN X < square (varQ X)])
              ⊂ pre (semantics WPT5b)).
-  unfold pre,semantics,subset,WPT5b; simpl; intros.
+  unfold pre,semantics,subset,WPT5b; simpl.
+  intros s [[H1 H2] [H3 H4]].
   split.
-  intros; split. destruct H as [[H1 H2] [H3 H4]].
-  destruct s as [N P Q R]. simpl in *.
-  unfold Is_true in H0.
-  remember (proj1_sig (nat_lt_ge_bool N (P * P))) as e; destruct e; destruct H0.
- *)
+  intros H5; split. 
+  destruct s as [N P Q R]; simpl in *.
+  unfold Is_true in H5.
+  remember (proj1_sig (nat_lt_ge_bool N (P * P))) as e; destruct e.
+  unfold square in *.
+
+  Focus 5.
+  apply (Refinement _ _ d).
+  simpl.
+  unfold subset.
+  intros.
+  inversion x as [H1 H2].
+  unfold Inv in *.
+  assert (Ha: forall b, or (Is_true b) (Is_false b)).
+  intros. destruct b; simpl in *; auto. 
+  destruct s as [N P Q R].
+  simpl in *.
+  inversion H as [H3 H4].
+  assert (H': or (Is_true (proj1_sig (nat_lt_ge_bool N (P * P))))
+                 (Is_false (proj1_sig (nat_lt_ge_bool N (P * P))))) by (apply Ha).
+  inversion H' as [H5 | H5].
+  apply H3 in H5; assumption.
+  apply H4 in H5; assumption.
+
+  Focus 2. exfalso; assumption.
+  Focus 2. split. assumption. 
+  unfold Inv; split; assumption.
+  Focus 2. split. destruct s as [N P Q R]; simpl in *.
+  Focus 2. split. assumption.
+  unfold Inv; split; assumption.
+
 Admitted.
 
 Lemma step6Then : WPT5bThen ≤ WAssign Q (Var P).
@@ -1005,20 +979,36 @@ Lemma step6Else' : PT5bElse ⊑ Assign (fun s => setR (varP s) s).
   split; auto.
 Qed.
 
-Theorem result : WSPEC ≤ (
-  WSeq WPT3a
-  (WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) WBody)
-  ).
-Proof.
-  apply (wrefineTrans WPT1). apply step1.
-  apply (wrefineTrans WPT2). apply step2.
-  apply (wrefineTrans (WSeq WPT3a WPT3b)). apply step3.
-  apply (wrefineTrans WPT3).
-
-Qed.
-
 Definition prgrm := WSeq WPT3a
-  (WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) WSkip).
+  (WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))
+          (WSeq WPT5a (WIf (Lt (Var N) (Mult (Var P) (Var P))) 
+                           (WAssign Q (Var P)) 
+                           (WAssign R (Var P))))).
+
+(* FIXME: Create wrefineSplit and wrefineIf *)
+Theorem result : WSPEC ≤ prgrm.
+Proof.
+  apply (wrefineTrans WPT1); try apply step1.
+  apply (wrefineTrans WPT2); try apply step2.
+  apply (wrefineTrans (WSeq WPT3a WPT3b)); try apply step3.
+(*  apply wrefineSplit. apply wrefineRefl *)
+  assert (Ha: WPT3b ≤ (WWhile Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))
+          (WSeq WPT5a
+             (WIf (Lt (Var N) (Mult (Var P) (Var P))) 
+                (WAssign Q (Var P)) (WAssign R (Var P)))))).
+
+  apply refineBody''.
+  apply (wrefineTrans WPT4); try apply step4.
+  apply (wrefineTrans (WSeq WPT5a WPT5b)). apply step5.
+(*  apply wrefineSplit. apply wrefineRefl *)
+  assert (Ha: WPT5b ≤ (WIf (Lt (Var N) (Mult (Var P) (Var P))) (WAssign Q (Var P))
+                                                               (WAssign R (Var P)))).
+  unfold WPT5b; apply refineSplitIf.
+  apply step6Then.
+  apply step6Else.
+  apply refineSplit; [apply wrefineRefl | apply Ha].
+  apply refineSplit; [apply wrefineRefl | apply Ha].  
+Qed.
 
 Lemma prgrmProof : isExecutable prgrm.
 Proof.  
@@ -1027,20 +1017,3 @@ Qed.
 
 Require Import String.
 Compute (toCode prgrm prgrmProof 0).
-
-Theorem result' : SPEC ⊑ 
-  (
-  PT3a ;; 
-  While (PT5a ;; If (fun s => proj1_sig (nat_lt_ge_bool (varN s) (square (varP s))))
-                   (Assign (fun s => setQ (varP s) s))
-                   (Assign (fun s => setR (varP s) s)))
-       (fun X => negb (beq_nat (1 + varR X) (varQ X)))
-  ).
-    apply (refineTrans PT1); try apply step1.
-    apply (refineTrans PT2); try apply step2.
-    apply (refineTrans (PT3a ;; PT3b)); try apply step3.
-    apply refineRefl.  
-Qed.
-
-End Example.
-
