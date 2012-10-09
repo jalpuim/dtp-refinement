@@ -1,13 +1,9 @@
-Module Example.
-
 Require Import Div2.
 Require Import Even.
 Require Import Arith.
 Require Import Arith.Bool_nat.
 Require Import AuxiliaryProofs.
-
-Load While.
-Import While.
+Require Import While.
 
 Module Definitions.
 
@@ -184,17 +180,17 @@ Lemma step5 : WPT4 ⊑ WPT5a ; WPT5b.
   simpl.
   intros s H.
   split.
-  destruct s.
+  destruct s as [N P Q R].
   simpl in *.
   split.
   inversion H as [H1 H2].
 
  (** even-odd approach **)
-  assert (Ha: even varR0 \/ odd varR0).
-  apply even_or_odd. destruct Ha as [R0even|R0odd].
+  assert (Ha: even R \/ odd R).
+  apply even_or_odd. destruct Ha as [Reven|Rodd].
 
   (* varR0 even *)
-  assert (Ha: even varQ0 \/ odd varQ0). apply even_or_odd. destruct Ha as [Q0even|Q0odd].
+  assert (Ha: even Q \/ odd Q). apply even_or_odd. destruct Ha as [Qeven|Qodd].
 
   (* varR0 even, varQ0 even *)
   rewrite <- div2_double at 1. unfold "*". rewrite <- plus_n_O.
@@ -207,7 +203,7 @@ Lemma step5 : WPT4 ⊑ WPT5a ; WPT5b.
   apply plus_lt_compat_r. apply even_odd_lt_div2. split; trivial. trivial. trivial. trivial.
 
   (* varR0 odd *)
-  assert (Ha: even varQ0 \/ odd varQ0). apply even_or_odd. destruct Ha as [Q0even|Q0odd].
+  assert (Ha: even Q \/ odd Q). apply even_or_odd. destruct Ha as [Qeven|Qodd].
   
   (* varR0 odd, varQ0 even *)
   rewrite <- div2_double at 1. unfold "*". rewrite <- plus_n_O. rewrite odd_odd_plus_div2. 
@@ -223,9 +219,9 @@ Lemma step5 : WPT4 ⊑ WPT5a ; WPT5b.
   inversion H as [H1 H2].
 
   (** even-odd approach **)
-  assert (Ha: even varR0 \/ odd varR0). apply even_or_odd. destruct Ha as [R0even|R0odd].
+  assert (Ha: even R \/ odd R). apply even_or_odd. destruct Ha as [Reven|Rodd].
   (* varR0 even *)
-  assert (Ha: even varQ0 \/ odd varQ0). apply even_or_odd. destruct Ha as [Q0even|Q0odd].
+  assert (Ha: even Q \/ odd Q). apply even_or_odd. destruct Ha as [Qeven|Qodd].
   
   (* varR0 even, varQ0 even *)
   rewrite <- div2_double. unfold "*". rewrite <- plus_n_O. rewrite even_plus_div2. 
@@ -239,7 +235,7 @@ Lemma step5 : WPT4 ⊑ WPT5a ; WPT5b.
   split; trivial. trivial.
 
   (* varR0 odd *)
-  assert (Ha: even varQ0 \/ odd varQ0). apply even_or_odd. destruct Ha as [Q0even|Q0odd].
+  assert (Ha: even Q \/ odd Q). apply even_or_odd. destruct Ha as [Qeven|Qodd].
   
   (* varR0 odd, varQ0 even *)
   rewrite <- div2_double. unfold "*". rewrite <- plus_n_O. rewrite even_plus_div2. 
@@ -368,5 +364,3 @@ Require Import String.
 Compute (toCode prgrm prgrmProof 0).
 
 End Proof.
-
-End Example.

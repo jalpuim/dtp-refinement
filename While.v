@@ -1,13 +1,9 @@
-Module While.
-
 Require Import EqNat.
 Require Import String.
 Require Import Arith.Bool_nat.
 Require Import Div2.
 Require Import Show.
-
-Load Refinement.
-Export Refinement.
+Require Export Refinement.
 
 Module Language.
 
@@ -287,5 +283,3 @@ Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
   end p indent.
 
 End CodeGeneration.
-
-End While.

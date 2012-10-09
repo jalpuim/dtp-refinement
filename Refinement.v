@@ -6,8 +6,6 @@
   - How to handle frame rules? What can change and what cannot?
 *)
 
-Module Refinement.
-
 Require Import Bool.
 
 Record S : Type := mkS {varN : nat; varP : nat; varQ : nat; varR : nat}.
@@ -365,5 +363,3 @@ Proof.
   simpl in *.
   intros; assumption.
 Qed.
-
-End Refinement.

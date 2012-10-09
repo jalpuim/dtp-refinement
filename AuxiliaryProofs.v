@@ -1,5 +1,3 @@
-Section AuxiliaryProofs.
-
 Require Import Div2.
 Require Import Even.
 Require Import Plus.
@@ -293,5 +291,3 @@ Proof.
   apply Hm.
   assumption.
 Qed.
-
-End AuxiliaryProofs.
