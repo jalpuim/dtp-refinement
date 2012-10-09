@@ -257,7 +257,7 @@ Definition While_PT (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
 
 (* Law 7.1 *)
 Lemma refineWhile (inv : Pow S) (cond : S -> bool) : 
-  let pt := [inv , fun _ _ s' => inv s' ] in
+  let pt := [inv , fun _ _ s' => inv s'] in
   let body := [fun s => inv s /\ Is_true (cond s), (fun _ _ s => inv s)] in
   pt ⊏ While_PT inv cond body.
   Proof.

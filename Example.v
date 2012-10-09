@@ -136,10 +136,7 @@ Proof.
      change (Is_false (negb (beq_nat (Datatypes.S (varR s')) (varQ s')))) in Post2.
      intro F; rewrite F in Post2; contradiction.
 Qed.
-
-Axiom lt_n_sq : forall (m n : nat), m < n -> m * m < n * n. 
-Axiom lt_sq_n : forall (m n : nat), m * m < n * n -> m < n.
-
+  
 Lemma step4 : WBody ⊑ WPT4.
   unfold WPT3b,WPT4,"⊑",semantics; simpl.
 
@@ -259,7 +256,6 @@ Lemma step5 : WPT4 ⊑ WPT5a ; WPT5b.
   inversion H as [H1 [H2 H3]].
   unfold Inv in *.
   split; destruct s as [N P Q R]; simpl in *; assumption.  
-
   unfold Inv.
   (* FIXME: use refineIf ? *)
   assert (d: pre ([fun X : S => varR X < varP X < varQ X /\ square (varR X) <= varN X < square (varQ X),
