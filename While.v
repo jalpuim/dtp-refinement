@@ -186,7 +186,7 @@ End Semantics.
 
 Module CodeGeneration.
 
-Export Semantics.
+Export Language.
 
 Fixpoint isExecutable (w: WhileL) : Prop :=
   match w with 
@@ -278,8 +278,8 @@ Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
                       (sp indent) ++ "{\n" ++
                       (sp indent) ++ (toCode b (isExecBody inv c b p') (i'+4)) ++ "\n" ++
                       (sp indent) ++ "}"
-  | Spec pt         => fun p' i' => match p' with 
-                                    end
+  | Spec pt        => fun p' i' => match p' with 
+                                   end
   end p indent.
 
 End CodeGeneration.

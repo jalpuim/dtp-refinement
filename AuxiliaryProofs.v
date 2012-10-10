@@ -5,7 +5,7 @@ Require Import Lt.
 Require Import Mult.
 Require Import Omega.
 
-(* Even/Odd proofs *) 
+Section EvenOddProofs.
 
 Theorem even_even_lt_div2 : forall m n, even m /\ even n -> m < n -> div2 m < div2 n.
 Proof.
@@ -98,7 +98,9 @@ Proof.
       repeat apply lt_S_n in H4. exact H4.
 Qed.
 
-(* Prop proofs *)
+End EvenOddProofs.
+
+Section PropProofs.
 
 Lemma or_imp_l : forall (p q s : Prop),
   p \/ q ->
@@ -138,7 +140,9 @@ Proof.
   right; assumption.
 Qed.
 
-(* Lt proofs *)
+End PropProofs.
+
+Section LtProofs.
 
 Lemma lt_n_sq : forall (m n : nat), m < n -> m * m < n * n.
 Proof.
@@ -205,30 +209,21 @@ Lemma lt_plus_or : forall (q n m p : nat),
 Proof.
   intros q.
   induction q.
-  intros n.
-  induction n.
   intros.
-  inversion H.
-  simpl in *.
-  destruct p.
-  simpl.
-  right; assumption.
-  intros.
+  induction p.
+  right; simpl in H; assumption.
   destruct m.
   simpl in *.
-  apply lt_S_n in H.
-  apply or_imp with (p := p < 0) (q := 0 < n).
-  apply IHn.
+  right.
+  inversion H; apply lt_0_Sn.
+  simpl in *.
+  destruct n.
+  inversion H.
+  apply or_imp_l with (p := p < 0).
+  apply IHp.
+  apply le_Sn_le in H.
   assumption.
   intros contra; inversion contra.
-  intros; apply lt_0_Sn.
-  rewrite plus_comm in H.
-  simpl in H.
-  apply lt_S_n in H.
-  rewrite plus_comm in H.
-  apply or_imp_r with (q := m < n).
-  apply IHn; assumption.
-  intros; apply lt_n_S; assumption.
 
   intros.
   destruct p.
@@ -291,3 +286,5 @@ Proof.
   apply Hm.
   assumption.
 Qed.
+
+End LtProofs.

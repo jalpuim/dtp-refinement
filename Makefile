@@ -2,19 +2,25 @@ default: coq
 
 coq: show refinement while auxproofs example 
 
-show: 
+show: Show.vo
+refinement: Refinement.vo
+while: While.vo
+auxproofs: AuxiliaryProofs.vo
+example: Example.vo
+
+Show.vo: Show.v
 	coqc Show.v
 
-refinement:
+Refinement.vo: Refinement.v
 	coqc Refinement.v
 
-while: show refinement
+While.vo: Show.vo Refinement.vo While.v
 	coqc While.v
 
-auxproofs: 
+AuxiliaryProofs.vo: AuxiliaryProofs.v
 	coqc AuxiliaryProofs.v
 
-example: show refinement while auxproofs
+Example.vo: Show.vo Refinement.vo While.vo AuxiliaryProofs.vo Example.v
 	coqc Example.v
 
 clean:

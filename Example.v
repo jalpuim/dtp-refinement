@@ -3,12 +3,12 @@ Require Import Even.
 Require Import Arith.
 Require Import Arith.Bool_nat.
 Require Import AuxiliaryProofs.
+Require Import Bool.
 Require Import While.
+Import While.Language.
+Import While.Semantics.
 
 Module Definitions.
-
-Import While.Language.
-Require Import Bool.
 
 Definition square : nat -> nat := fun n => n * n.
 
@@ -22,23 +22,23 @@ Definition WSPEC := Spec SPEC.
 Definition PT1 :=
   ([ fun _ => True, fun _ _ X => Inv X /\ 1 + varR X = varQ X]).
 
-Definition WPT1 := Spec PT1.
+Definition W1 := Spec PT1.
 
 Definition PT2 := [fun _ => True , K Inv] ;; 
                   [Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X].
 
-Definition WPT2 := (Spec ([fun _ => True , K Inv])) ; (Spec ([Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X])).
+Definition W2 := (Spec ([fun _ => True , K Inv])) ; (Spec ([Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X])).
 
 Definition PT3a :=
   Assign_PT (fun s => mkS (varN s) (varP s) (1 + (varN s)) 0).
 
-Definition WPT3aa :=
+Definition W3aa :=
   R ::= (EConst 0).
 
-Definition WPT3ab :=
+Definition W3ab :=
   Q ::= (Plus (EConst 1) (Var N)).
 
-Definition WPT3a := WPT3aa ; WPT3ab.
+Definition W3a := W3aa ; W3ab.
 
 Definition PT3b :=
   While_PT Inv (fun X => negb (beq_nat (1 + varR X) (varQ X)))
@@ -49,32 +49,28 @@ Definition WBody :=
   Spec ([(fun s => Inv s /\ Is_true (negb (beq_nat (1 + varR s) (varQ s)))),
           (fun _ _ s' => Inv s')]).  
 
-Definition WPT3b :=
+Definition W3b :=
   let guard := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) in
   While Inv guard WBody.
 
-Definition WPT4 :=
+Definition W4 :=
   (Spec ([fun X => 1 + varR X < varQ X /\ Inv X, 
           fun _ _ X => varR X < varP X < varQ X /\ Inv X])) ;
   (Spec ([fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X])).
 
-Definition WPT5a :=
+Definition W5a :=
   P ::= (Div2 (Plus (Var Q) (Var R))).
 
-Definition PT5bThen := 
-  [fun s => (varN s < square (varP s)) /\ (varP s < varQ s) /\ Inv s,
-   fun _ _ s' => Inv s'].
-
-Definition WPT5bThen := 
+Definition W5bThen := 
   Spec ([fun s => (varN s < square (varP s)) /\ (varP s < varQ s) /\ Inv s,
          fun _ _ s' => Inv s']).
 
-Definition WPT5bElse := 
+Definition W5bElse := 
   Spec ([fun s => (varN s >= square (varP s)) /\ (varR s < varP s) /\ Inv s,
          fun _ _ s' => Inv s']).
 
-Definition WPT5b :=
-  If (Lt (Var N) (Mult (Var P) (Var P))) WPT5bThen WPT5bElse.
+Definition W5b :=
+  If (Lt (Var N) (Mult (Var P) (Var P))) W5bThen W5bElse.
 
 End Definitions.
 
@@ -86,26 +82,26 @@ Import Bool.
 
 Ltac refine_post pt1 pt2 := apply (Refinement _ _ (fun s (y : pre pt1 s) => y : pre pt2 s)).
 
-Lemma step1 : WSPEC ⊑ WPT1.
+Lemma step1 : WSPEC ⊑ W1.
   Proof.    
-    unfold WSPEC, WPT1, "⊑", semantics. 
+    unfold WSPEC, W1, "⊑", semantics. 
     unfold SPEC, PT1, Inv. refine_post SPEC PT1.
     intros X tt s [H1 H2]; simpl in *; rewrite H2; apply H1.    
   Qed.
 
-Lemma step2 : WPT1 ⊑ WPT2.
+Lemma step2 : W1 ⊑ W2.
   Proof.
-    unfold WPT1, WPT2, "⊑", semantics. 
-    unfold PT1, PT2, Inv, Seq_PT. simpl.
+    unfold W1, W2, "⊑", semantics. 
+    unfold PT1, PT2, Inv, Seq_PT; simpl.
     assert (d : forall s, pre PT1 s -> pre PT2 s).
     intros; exists I; intros; auto.
     apply (Refinement _ _ d).
     simpl; intros s Pre s' [t [H1 [H2 H3]]]; split; auto.
 Qed.
 
-Lemma step3 : WPT2 ⊑ WPT3a ; WPT3b.
+Lemma step3 : W2 ⊑ W3a ; W3b.
 Proof.
-  unfold WPT2,WPT3a,WPT3aa,WPT3ab,WPT3b,"⊑",semantics.
+  unfold W2,W3a,W3aa,W3ab,W3b,"⊑",semantics.
   apply refineSplitPT.
   simpl.
   unfold Assign_PT, K, Inv.
@@ -120,8 +116,8 @@ Proof.
   (* Part b *)
      (* FIXME: use refineWhile? *)
      assert (d: pre ([Inv, fun (s: S) (_: Inv s) (X: S) => Inv X /\ 1 + varR X = varQ X])
-                ⊂ pre (semantics WPT3b)).
-     unfold WPT3b,subset,pre; simpl; intros; split; try assumption.
+                ⊂ pre (semantics W3b)).
+     unfold W3b,subset,pre; simpl; intros; split; try assumption.
      split. 
      split; inversion H0; assumption.
      intros; assumption.
@@ -133,11 +129,11 @@ Proof.
      intro F; rewrite F in Post2; contradiction.
 Qed.
   
-Lemma step4 : WBody ⊑ WPT4.
-  unfold WPT3b,WPT4,"⊑",semantics; simpl.
+Lemma step4 : WBody ⊑ W4.
+  unfold W4,"⊑",semantics; simpl.
 
-  assert (d: pre (semantics WBody) ⊂ pre (semantics WPT4)).
-  unfold subset,pre,semantics,WBody,WPT4.
+  assert (d: pre (semantics WBody) ⊂ pre (semantics W4)).
+  unfold subset,pre,semantics,WBody,W4.
   simpl; intros.
   split. 
   inversion H as [H1 H2]; inversion H1 as [H3 H4].
@@ -172,7 +168,7 @@ Lemma step4 : WBody ⊑ WPT4.
 Qed.
 
 
-Lemma step5 : WPT4 ⊑ WPT5a ; WPT5b.
+Lemma step5 : W4 ⊑ W5a ; W5b.
   unfold "⊑",semantics. 
   simpl.
   apply refineSplitPT.
@@ -257,8 +253,8 @@ Lemma step5 : WPT4 ⊑ WPT5a ; WPT5b.
   assert (d: pre ([fun X : S => varR X < varP X < varQ X /\ square (varR X) <= varN X < square (varQ X),
              fun (s : S) (_ : varR s < varP s < varQ s /\ square (varR s) <= varN s < square (varQ s)) 
              (X : S) => square (varR X) <= varN X < square (varQ X)])
-             ⊂ pre (semantics WPT5b)).
-  unfold pre,semantics,subset,WPT5b; simpl.
+             ⊂ pre (semantics W5b)).
+  unfold pre,semantics,subset,W5b; simpl.
   intros s [[H1 H2] [H3 H4]].
   destruct s as [N P Q R]; simpl in *.
   split.
@@ -309,9 +305,9 @@ Lemma step5 : WPT4 ⊑ WPT5a ; WPT5b.
   apply H4 in H5; assumption.
 Qed.
 
-Lemma step6Then : WPT5bThen ⊑ Q ::= (Var P).
+Lemma step6Then : W5bThen ⊑ Q ::= (Var P).
 Proof.
-  unfold WPT5bThen,"⊑",semantics.
+  unfold W5bThen,"⊑",semantics.
   apply refineAssign.
   simpl.
   intros s H.
@@ -324,9 +320,9 @@ Proof.
   assumption.
 Qed.
 
-Lemma step6Else : WPT5bElse ⊑ R ::= (Var P).
+Lemma step6Else : W5bElse ⊑ R ::= (Var P).
 Proof.
-  unfold WPT5bElse,"⊑",semantics.
+  unfold W5bElse,"⊑",semantics.
   apply refineAssign.
   simpl.
   intros s H.
@@ -336,23 +332,23 @@ Proof.
   split; auto.
 Qed.
 
-Definition prgrm := WPT3a ;
+Definition prgrm := W3a ;
   (While Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))
-         (WPT5a ; (If (Lt (Var N) (Mult (Var P) (Var P))) 
+         (W5a ; (If (Lt (Var N) (Mult (Var P) (Var P))) 
                       (Q ::= (Var P)) 
                       (R ::= (Var P))))).
 
 Theorem result : WSPEC ⊑ prgrm.
 Proof.
-  apply (refineTrans WPT1); try apply step1.
-  apply (refineTrans WPT2); try apply step2.
-  apply (refineTrans (WPT3a ; WPT3b)); try apply step3.
+  apply (refineTrans W1); try apply step1.
+  apply (refineTrans W2); try apply step2.
+  apply (refineTrans (W3a ; W3b)); try apply step3.
   apply refineSplit; try apply refineRefl.
-  unfold WPT3b; apply refineBody.
-  apply (refineTrans WPT4); try apply step4.
-  apply (refineTrans (WPT5a ; WPT5b)); try apply step5.
+  unfold W3b; apply refineBody.
+  apply (refineTrans W4); try apply step4.
+  apply (refineTrans (W5a ; W5b)); try apply step5.
   apply refineSplit; try apply refineRefl.
-  unfold WPT5b; apply refineSplitIf; [apply step6Then | apply step6Else]. 
+  unfold W5b; apply refineSplitIf; [apply step6Then | apply step6Else]. 
 Qed.
 
 Lemma prgrmProof : isExecutable prgrm.
