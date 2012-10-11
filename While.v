@@ -1,4 +1,5 @@
 Require Import EqNat.
+Require Import Bool.
 Require Import String.
 Require Import Arith.Bool_nat.
 Require Import Div2.
@@ -108,13 +109,7 @@ Fixpoint evalBExpr (b: BExpr) (s: S) : bool :=
   | Or b1 b2  => orb (evalBExpr b1 s) (evalBExpr b2 s)
   | Not e     => negb (evalBExpr e s)
   | Eq e1 e2  => beq_nat (evalExpr e1 s) (evalExpr e2 s)
-(*  | Lt e1 e2  => andb (leb (evalExpr e1 s) (evalExpr e2 s)) 
-                      (negb (beq_nat (evalExpr e1 s) (evalExpr e2 s)))
-  | Le e1 e2  => leb (evalExpr e1 s) (evalExpr e2 s)
-  | Gt e1 e2  => negb (leb (evalExpr e1 s) (evalExpr e2 s))
-  | Ge e1 e2  => negb (andb (leb (evalExpr e1 s) (evalExpr e2 s)) 
-                      (negb (beq_nat (evalExpr e1 s) (evalExpr e2 s))))
-*)| Lt e1 e2  => proj1_sig (nat_lt_ge_bool (evalExpr e1 s) (evalExpr e2 s))
+  | Lt e1 e2  => proj1_sig (nat_lt_ge_bool (evalExpr e1 s) (evalExpr e2 s))
   | Le e1 e2  => proj1_sig (nat_le_gt_bool (evalExpr e1 s) (evalExpr e2 s))
   | Gt e1 e2  => proj1_sig (nat_gt_le_bool (evalExpr e1 s) (evalExpr e2 s))
   | Ge e1 e2  => proj1_sig (nat_ge_lt_bool (evalExpr e1 s) (evalExpr e2 s))
@@ -134,7 +129,7 @@ Definition wrefines w1 w2 := (semantics w1) ⊏ (semantics w2).
 
 Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity) : type_scope.
 
-Lemma refineAssignW (w : WhileL) (id : Identifier) (exp : Expr) 
+Lemma refineAssign (w : WhileL) (id : Identifier) (exp : Expr) 
   (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre ((setIdent id (evalExpr exp s)) s))
 
   : w ⊑ Assign id exp.
@@ -145,7 +140,7 @@ Lemma refineAssignW (w : WhileL) (id : Identifier) (exp : Expr)
   Qed.
 
 (* TODO: law for multiple assignments? *)
-Lemma refineSeqAssignW : forall (id id1 id2 : Identifier) (exp exp1 exp2 : Expr),
+Lemma refineSeqAssign : forall (id id1 id2 : Identifier) (exp exp1 exp2 : Expr),
   let setEval id exp s := (setIdent id (evalExpr exp s) s) in
   let WAssign := Assign id exp in
   let WAssignSeq := Assign id1 exp1 ; Assign id2 exp2 in
@@ -164,6 +159,32 @@ Proof.
   rewrite H2.
   rewrite x1.
   symmetry; apply H.
+Qed.
+
+Lemma refineSeq (Pre Mid Post : Pow S) :
+  let w := Spec ([ Pre , fun _ _ s' => Post s' ]) in
+  w ⊑ (Spec ([Pre , (fun _ _ s' => Mid s') ]) ; Spec ([Mid , (fun _ _ s' => Post s') ])).
+Proof. 
+  unfold "⊑",semantics; apply refineSeqPT.
+Qed.
+
+Lemma refineIf (cond : S -> bool) (pt : PT) : 
+  let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
+  let thenBranch := [branchPre (fun s => Is_true (cond s)) 
+                    , fun s pre s' => post pt s (fst pre) s' ] in
+  let elseBranch := [branchPre (fun s => Is_false (cond s)) ,
+                     fun s pre s' => post pt s (fst pre) s'  ] in
+  (Spec pt) ⊑ Spec (If_PT cond thenBranch elseBranch).
+Proof.
+  unfold "⊑",semantics; apply refineIfPT.
+Qed.
+
+Lemma refineWhile (inv : Pow S) (cond : S -> bool) : 
+  let w := Spec ([inv , fun _ _ s' => inv s' /\ Is_false (cond s')]) in
+  let body := [fun s => inv s /\ Is_true (cond s), (fun _ _ s => inv s)] in
+  w ⊑ Spec (While_PT inv cond body).
+  Proof.
+    unfold "⊑",semantics; apply refineWhilePT.
 Qed.
 
 Definition refineTrans (w2 w1 w3 : WhileL) : 

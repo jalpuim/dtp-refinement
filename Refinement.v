@@ -104,7 +104,7 @@ Definition Assign_PT : (S -> S) -> PT := fun f =>
   [assignPre , assignPost].
 
 (* Law 1.3 *)
-Lemma refineAssign (pt : PT) (f : S -> S) (h : forall (s : S) (pre : pre pt s),  post pt s pre (f s)) 
+Lemma refineAssignPT (pt : PT) (f : S -> S) (h : forall (s : S) (pre : pre pt s),  post pt s pre (f s)) 
   : pt ⊏ Assign_PT f.
   Proof.
     assert (d : pre pt ⊂ pre (Assign_PT f)); refine_simpl.
@@ -135,7 +135,7 @@ Definition Seq_PT (pt1 pt2 : PT) : PT :=
 Notation "pt1 ;; pt2" := (Seq_PT pt1 pt2) (at level 52, right associativity).
 
 (* Law 4.2 *)
-Lemma refineSeq (Pre Mid Post : Pow S) :
+Lemma refineSeqPT (Pre Mid Post : Pow S) :
   let pt := [ Pre , fun _ _ s' => Post s' ] in
   pt ⊏ ([Pre , (fun _ _ s' => Mid s') ] ;; [Mid , (fun _ _ s' => Post s') ]).
   Proof.
@@ -146,7 +146,7 @@ Lemma refineSeq (Pre Mid Post : Pow S) :
     refine_simpl; intros s x s' H; destruct H as [t q]; destruct q; auto.
   Qed.
 
-Lemma refineSeqAssign : forall (f: S -> S) (g: S -> S) (h: S -> S),
+Lemma refineSeqAssignPT : forall (f: S -> S) (g: S -> S) (h: S -> S),
   (forall (s : S), h s = g (f s)) -> 
   Assign_PT h ⊏ Assign_PT f ;; Assign_PT g.
 Proof.
@@ -204,7 +204,7 @@ Definition If_PT (cond : S -> bool) (Then Else : PT) : PT :=
   [ ifPre , ifPost ].
 
 (* Law 5.1 *)
-Lemma refineIf (cond : S -> bool) (pt : PT) : 
+Lemma refineIfPT (cond : S -> bool) (pt : PT) : 
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
   let thenBranch := [branchPre (fun s => Is_true (cond s)) 
                     , fun s pre s' => post pt s (fst pre) s' ] in
@@ -254,8 +254,8 @@ Definition While_PT (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
   [ whilePre , whilePost ].
 
 (* Law 7.1 *)
-Lemma refineWhile (inv : Pow S) (cond : S -> bool) : 
-  let pt := [inv , fun _ _ s' => inv s'] in
+Lemma refineWhilePT (inv : Pow S) (cond : S -> bool) : 
+  let pt := [inv , fun _ _ s' => inv s' /\ Is_false (cond s')] in
   let body := [fun s => inv s /\ Is_true (cond s), (fun _ _ s => inv s)] in
   pt ⊏ While_PT inv cond body.
   Proof.
@@ -268,7 +268,7 @@ Lemma refineWhile (inv : Pow S) (cond : S -> bool) :
     intros s' s'' [H1 H2] H3; assumption.
     apply (Refinement _ _ d).
     intros s PreS s' [H1 H2].
-    assumption.
+    split; assumption.
 Qed.
 
 Definition WhileSemantics  (inv : Pow S) (cond : S -> bool) (body : PT) (U : Pow S) (s : S) : Type

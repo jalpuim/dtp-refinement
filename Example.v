@@ -98,14 +98,25 @@ Proof.
   unfold Assign_PT, K, Inv.
   apply (refineTransPT PT3a).
   (* Part a *)
-    unfold K, Inv, PT3a, square; apply refineAssign.
+    unfold K, Inv, PT3a, square; apply refineAssignPT.
     simpl; intros; split; auto with arith.
   (* refineTrans *)
   unfold PT3a,Assign_PT.
-  apply refineSeqAssign.
+  apply refineSeqAssignPT.
   intros; destruct s; simpl; reflexivity.
   (* Part b *)
+     unfold WBody,evalBExpr.
+     assert (Ha: forall (s : S), 1 + varR s = varQ s <-> Is_false (negb (beq_nat (1 + varR s) (varQ s)))).
+     intros.
+     split; intros.
+     rewrite H; rewrite <- beq_nat_refl.
+     unfold Is_false,negb; trivial.
+     unfold Is_false,negb in H.
+     remember (beq_nat (1 + varR s) (varQ s)) as e; destruct e.
+     apply beq_nat_eq in Heqe; assumption.
+     inversion H.
      (* FIXME: use refineWhile? *)
+     apply refineWhile with (inv := Inv).
      assert (d: pre ([Inv, fun (s: S) (_: Inv s) (X: S) => Inv X /\ 1 + varR X = varQ X])
                 ⊂ pre (semantics W3b)).
      unfold W3b,subset,pre; simpl; intros; split; try assumption.
@@ -235,7 +246,7 @@ Lemma step5 : W4 ⊑ W5a ; W5b.
   inversion H as [H1 [H2 H3]].
   unfold Inv in *.
   split; destruct s as [N P Q R]; simpl in *; assumption.  
-  unfold Inv.
+  unfold Inv,W5b.
   (* FIXME: use refineIf ? *)
   assert (d: pre ([fun X : S => varR X < varP X < varQ X /\ square (varR X) <= varN X < square (varQ X),
              fun (s : S) (_ : varR s < varP s < varQ s /\ square (varR s) <= varN s < square (varQ s)) 
@@ -277,7 +288,6 @@ Qed.
 
 Lemma step6Then : W5bThen ⊑ Q ::= (Var P).
 Proof.
-  unfold W5bThen,"⊑",semantics.
   apply refineAssign.
   simpl.
   intros s H.
@@ -292,7 +302,6 @@ Qed.
 
 Lemma step6Else : W5bElse ⊑ R ::= (Var P).
 Proof.
-  unfold W5bElse,"⊑",semantics.
   apply refineAssign.
   simpl.
   intros s H.
