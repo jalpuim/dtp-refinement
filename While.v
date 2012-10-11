@@ -108,18 +108,16 @@ Fixpoint evalBExpr (b: BExpr) (s: S) : bool :=
   | Or b1 b2  => orb (evalBExpr b1 s) (evalBExpr b2 s)
   | Not e     => negb (evalBExpr e s)
   | Eq e1 e2  => beq_nat (evalExpr e1 s) (evalExpr e2 s)
-  | Lt e1 e2  => andb (leb (evalExpr e1 s) (evalExpr e2 s)) 
+(*  | Lt e1 e2  => andb (leb (evalExpr e1 s) (evalExpr e2 s)) 
                       (negb (beq_nat (evalExpr e1 s) (evalExpr e2 s)))
   | Le e1 e2  => leb (evalExpr e1 s) (evalExpr e2 s)
   | Gt e1 e2  => negb (leb (evalExpr e1 s) (evalExpr e2 s))
   | Ge e1 e2  => negb (andb (leb (evalExpr e1 s) (evalExpr e2 s)) 
                       (negb (beq_nat (evalExpr e1 s) (evalExpr e2 s))))
-(*
-  | Lt e1 e2  => proj1_sig (nat_lt_ge_bool (evalExpr e1 s) (evalExpr e2 s))
+*)| Lt e1 e2  => proj1_sig (nat_lt_ge_bool (evalExpr e1 s) (evalExpr e2 s))
   | Le e1 e2  => proj1_sig (nat_le_gt_bool (evalExpr e1 s) (evalExpr e2 s))
   | Gt e1 e2  => proj1_sig (nat_gt_le_bool (evalExpr e1 s) (evalExpr e2 s))
   | Ge e1 e2  => proj1_sig (nat_ge_lt_bool (evalExpr e1 s) (evalExpr e2 s))
-*)
 end.
 
 Fixpoint semantics (w: WhileL) : PT :=
@@ -135,6 +133,38 @@ end.
 Definition wrefines w1 w2 := (semantics w1) ⊏ (semantics w2).
 
 Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity) : type_scope.
+
+Lemma refineAssignW (w : WhileL) (id : Identifier) (exp : Expr) 
+  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre ((setIdent id (evalExpr exp s)) s))
+
+  : w ⊑ Assign id exp.
+  Proof.
+    assert (d: pre (semantics w) ⊂ pre (semantics (Assign id exp))); refine_simpl.
+    apply (Refinement _ _ d).
+    simpl; intros s pres s' eq; rewrite eq; auto.
+  Qed.
+
+(* TODO: law for multiple assignments? *)
+Lemma refineSeqAssignW : forall (id id1 id2 : Identifier) (exp exp1 exp2 : Expr),
+  let setEval id exp s := (setIdent id (evalExpr exp s) s) in
+  let WAssign := Assign id exp in
+  let WAssignSeq := Assign id1 exp1 ; Assign id2 exp2 in
+  (forall (s : S), setEval id exp s = setEval id2 exp2 (setEval id1 exp1 s)) -> 
+  WAssign ⊑ WAssignSeq.
+Proof.
+  intros.
+  assert (d: pre (semantics (WAssign)) ⊂ pre (semantics (WAssignSeq))). 
+  refine_simpl.
+  intros; apply exist.
+  assumption. 
+  intros; assumption.
+  apply (Refinement _ _ d).
+  simpl in *; unfold subset in *. 
+  intros; inversion H0; inversion H1.
+  rewrite H2.
+  rewrite x1.
+  symmetry; apply H.
+Qed.
 
 Definition refineTrans (w2 w1 w3 : WhileL) : 
   w1 ⊑ w2 -> w2 ⊑ w3 -> w1 ⊑ w3.
@@ -211,7 +241,7 @@ Definition identToCode (ident: Identifier) : string :=
 Fixpoint exprToCode (e: Expr) : string :=
   match e with
   | Var n     => identToCode n
-  | EConst n  => Show.print_nat n
+  | EConst n  => print_nat n
   | Plus x y  => exprToCode x ++ " + " ++ exprToCode y
   | Minus x y => exprToCode x ++ " - " ++ exprToCode y
   | Mult x y  => exprToCode x ++ " * " ++ exprToCode y

@@ -14,18 +14,9 @@ Definition square : nat -> nat := fun n => n * n.
 
 Definition Inv : S -> Prop := fun X => square (varR X) <= varN X < square (varQ X).
 
-Definition SPEC := 
-  ([ (fun _ => True), fun _ _ X => square (varR X) <= varN X < square (1 + varR X)]).
+Definition WSPEC := Spec ([ (fun _ => True), fun _ _ X => square (varR X) <= varN X < square (1 + varR X)]).
 
-Definition WSPEC := Spec SPEC.
-
-Definition PT1 :=
-  ([ fun _ => True, fun _ _ X => Inv X /\ 1 + varR X = varQ X]).
-
-Definition W1 := Spec PT1.
-
-Definition PT2 := [fun _ => True , K Inv] ;; 
-                  [Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X].
+Definition W1 := Spec ([ fun _ => True, fun _ _ X => Inv X /\ 1 + varR X = varQ X]).
 
 Definition W2 := (Spec ([fun _ => True , K Inv])) ; (Spec ([Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X])).
 
@@ -39,11 +30,6 @@ Definition W3ab :=
   Q ::= (Plus (EConst 1) (Var N)).
 
 Definition W3a := W3aa ; W3ab.
-
-Definition PT3b :=
-  While_PT Inv (fun X => negb (beq_nat (1 + varR X) (varQ X)))
-        ([(fun s => Inv s /\ Is_true (negb (beq_nat (1 + varR s) (varQ s)))),
-          (fun _ _ s' => Inv s')]).
 
 Definition WBody := 
   Spec ([(fun s => Inv s /\ Is_true (negb (beq_nat (1 + varR s) (varQ s)))),
@@ -80,20 +66,25 @@ Import Definitions.
 Import While.CodeGeneration.
 Import Bool.
 
-Ltac refine_post pt1 pt2 := apply (Refinement _ _ (fun s (y : pre pt1 s) => y : pre pt2 s)).
+Ltac refine_post_pt pt1 pt2 := apply (Refinement _ _ (fun s (y : pre pt1 s) => y : pre pt2 s)). 
+
+Ltac refine_post w1 w2 := 
+  apply (Refinement _ _ (fun s (y : pre (semantics w1) s) => y : pre (semantics w2) s)).
+
+Ltac assert_pre w1 w2 := 
+  assert (d : pre (semantics w1) ⊂ pre (semantics w2));
+  unfold pre,subset,semantics,w1,w2.
 
 Lemma step1 : WSPEC ⊑ W1.
   Proof.    
-    unfold WSPEC, W1, "⊑", semantics. 
-    unfold SPEC, PT1, Inv. refine_post SPEC PT1.
-    intros X tt s [H1 H2]; simpl in *; rewrite H2; apply H1.    
+    refine_post WSPEC W1.
+    unfold subset.
+    intros X tt s [H1 H2]; simpl in *; rewrite H2; apply H1.  
   Qed.
 
 Lemma step2 : W1 ⊑ W2.
   Proof.
-    unfold W1, W2, "⊑", semantics. 
-    unfold PT1, PT2, Inv, Seq_PT; simpl.
-    assert (d : forall s, pre PT1 s -> pre PT2 s).
+    assert_pre W1 W2.
     intros; exists I; intros; auto.
     apply (Refinement _ _ d).
     simpl; intros s Pre s' [t [H1 [H2 H3]]]; split; auto.
@@ -130,10 +121,7 @@ Proof.
 Qed.
   
 Lemma step4 : WBody ⊑ W4.
-  unfold W4,"⊑",semantics; simpl.
-
-  assert (d: pre (semantics WBody) ⊂ pre (semantics W4)).
-  unfold subset,pre,semantics,WBody,W4.
+  assert_pre WBody W4.
   simpl; intros.
   split. 
   inversion H as [H1 H2]; inversion H1 as [H3 H4].
@@ -169,9 +157,8 @@ Qed.
 
 
 Lemma step5 : W4 ⊑ W5a ; W5b.
-  unfold "⊑",semantics. 
+  apply refineSplit.
   simpl.
-  apply refineSplitPT.
   apply refineAssign.
   simpl.
   intros s H.
@@ -257,49 +244,32 @@ Lemma step5 : W4 ⊑ W5a ; W5b.
   unfold pre,semantics,subset,W5b; simpl.
   intros s [[H1 H2] [H3 H4]].
   destruct s as [N P Q R]; simpl in *.
-  split.
-  intros H5; split. 
-  unfold Is_true in H5.  
-  remember (Compare_dec.leb N (P * P) && negb (beq_nat N (P * P))) as e; destruct e.
-  symmetry in Heqe; apply andb_true_iff in Heqe.
-  inversion Heqe as [H6 H7].
-  apply leb_iff in H6.
-  unfold square,"<"; unfold negb in H7.
-  remember (beq_nat N (P * P)) as e; destruct e.
-  inversion H7.
-  symmetry in Heqe0.
-  apply beq_nat_false in Heqe0.
-  inversion H6.
-  contradiction.
-  apply le_n_S; assumption.
-  exfalso; assumption.
-  split; [assumption | unfold Inv; split; assumption].
-  intros; split.
-  unfold Is_false in H.
-  remember (Compare_dec.leb N (P * P) && negb (beq_nat N (P * P))) as e; destruct e.
-  exfalso; assumption.
-  symmetry in Heqe; apply andb_false_iff in Heqe.
-  inversion Heqe as [H5 | H5].
-  apply leb_complete_conv in H5.
-  unfold square,ge,lt in *; apply le_Sn_le in H5; assumption.
-  unfold negb in H5; remember (beq_nat N (P * P)) as e; destruct e.
-  symmetry in Heqe0; apply beq_nat_true in Heqe0.
-  unfold ge,square in *; symmetry in Heqe0.
-  rewrite Heqe0; apply le_n.
+  unfold Inv,Is_true,Is_false; simpl.
+  remember (proj1_sig (nat_lt_ge_bool N (P * P))) as e; destruct e.
+  unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
+  unfold sumbool_rect,Sumbool.sumbool_not in *.
+  remember (lt_ge_dec N (P * P)) as e; destruct e.
+  split; intros H5.
+  repeat split; assumption.
   inversion H5.
-  split; [assumption | unfold Inv; split; assumption].
+  inversion Heqe.
+  unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
+  unfold sumbool_rect,Sumbool.sumbool_not in *.
+  remember (lt_ge_dec N (P * P)) as e; destruct e.
+  inversion Heqe.
+  split; intros H5.
+  inversion H5.
+  repeat split; assumption.
 
   apply (Refinement _ _ d).
-  simpl; unfold subset; intros.
-  inversion x as [H1 H2].
-  unfold Inv in *.
+  simpl; unfold subset; intros s PreS s' H.
+  inversion PreS as [H1 H2].
   assert (Ha: forall b, or (Is_true b) (Is_false b)) by 
          (intros; destruct b; simpl in *; auto). 
   destruct s as [N P Q R]; simpl in *.
   inversion H as [H3 H4]. 
-  assert (H': or (Is_true (Compare_dec.leb N (P * P) && negb (beq_nat N (P * P))))
-                 (Is_false (Compare_dec.leb N (P * P) && negb (beq_nat N (P * P)))))
-         by (apply Ha).
+  assert (H': or (Is_true (proj1_sig (nat_lt_ge_bool N (P * P))))
+                 (Is_false (proj1_sig (nat_lt_ge_bool N (P * P))))) by (apply Ha).
   inversion H' as [H5 | H5].
   apply H3 in H5; assumption.
   apply H4 in H5; assumption.

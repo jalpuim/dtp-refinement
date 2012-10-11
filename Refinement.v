@@ -151,15 +151,15 @@ Lemma refineSeqAssign : forall (f: S -> S) (g: S -> S) (h: S -> S),
   Assign_PT h ⊏ Assign_PT f ;; Assign_PT g.
 Proof.
   intros.
-  unfold Assign_PT,Seq_PT. simpl.
-  assert (d: pre ([fun _ : S => True, fun (s : S) (_ : True) (s' : S) => s' = h s]) ⊂
-             pre ([fun s : S => sig (fun _ : True => forall t : S, t = f s -> True),
-                   fun (s : S) (_ : sig (fun _ : True => forall t : S, t = f s -> True))
-                   (s' : S) => exists t : S, ex (fun _ : t = f s => s' = g t)])).
-  simpl. unfold subset. intros. apply exist. assumption. intros; assumption.
+  assert (d: pre (Assign_PT h) ⊂ pre (Assign_PT f ;; Assign_PT g)).
+  unfold Assign_PT,Seq_PT,subset; simpl.
+  intros; apply exist. 
+  assumption. 
+  intros; assumption.
   apply (Refinement _ _ d).
-  simpl in *. unfold subset in *. intros. inversion H0. inversion H1. rewrite H.
-  rewrite <- x1. rewrite <- H2. reflexivity.
+  simpl in *; unfold subset in *. 
+  intros; inversion H0; inversion H1; rewrite H.
+  rewrite <- x1; rewrite <- H2; reflexivity.
 Qed.
   
 Lemma seqExtendL (pt1 pt2 : PT) (U : Pow S) (s : S) : 
