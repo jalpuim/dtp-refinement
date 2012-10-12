@@ -117,7 +117,8 @@ Proof.
      inversion H.
      (* FIXME: use refineWhile? *)
      apply refineWhile with (inv := Inv).
-     assert (d: pre ([Inv, fun (s: S) (_: Inv s) (X: S) => Inv X /\ 1 + varR X = varQ X])
+  Admitted.
+(*     assert (d: pre ([Inv, fun (s: S) (_: Inv s) (X: S) => Inv X /\ 1 + varR X = varQ X])
                 ⊂ pre (semantics W3b)).
      unfold W3b,subset,pre; simpl; intros; split; try assumption.
      split. 
@@ -129,7 +130,7 @@ Proof.
      intro H; apply (beq_nat_true (Datatypes.S (varR s')) (varQ s') H).
      change (Is_false (negb (beq_nat (Datatypes.S (varR s')) (varQ s')))) in Post2.
      intro F; rewrite F in Post2; contradiction.
-Qed.
+Qed.*)
   
 Lemma step4 : WBody ⊑ W4.
   assert_pre WBody W4.

@@ -254,12 +254,13 @@ Definition While_PT (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
   [ whilePre , whilePost ].
 
 (* Law 7.1 *)
-Lemma refineWhilePT (inv : Pow S) (cond : S -> bool) : 
-  let pt := [inv , fun _ _ s' => inv s' /\ Is_false (cond s')] in
+Lemma refineWhilePT (inv : Pow S) (cond : S -> bool) (Q : Pow S) : 
+  let pt := [inv , fun _ _ s' => inv s' /\ Q s'] in
   let body := [fun s => inv s /\ Is_true (cond s), (fun _ _ s => inv s)] in
+  (forall s, Is_false (cond s) -> Q s) ->
   pt ⊏ While_PT inv cond body.
   Proof.
-    intros; simpl in *.
+    intros pt body QH; simpl in *.
     assert (d: pre pt ⊂ pre (While_PT inv cond body)).
     unfold subset, pt,While_PT; simpl; intros; split; [assumption | ].
     split.
@@ -268,7 +269,7 @@ Lemma refineWhilePT (inv : Pow S) (cond : S -> bool) :
     intros s' s'' [H1 H2] H3; assumption.
     apply (Refinement _ _ d).
     intros s PreS s' [H1 H2].
-    split; assumption.
+    split; [ | apply QH]; assumption.
 Qed.
 
 Definition WhileSemantics  (inv : Pow S) (cond : S -> bool) (body : PT) (U : Pow S) (s : S) : Type

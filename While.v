@@ -179,12 +179,13 @@ Proof.
   unfold "⊑",semantics; apply refineIfPT.
 Qed.
 
-Lemma refineWhile (inv : Pow S) (cond : S -> bool) : 
-  let w := Spec ([inv , fun _ _ s' => inv s' /\ Is_false (cond s')]) in
+Lemma refineWhile (inv : Pow S) (cond : S -> bool) (Q : Pow S) 
+  (StrQ : forall s, Is_false (cond s) -> Q s) : 
+  let w := Spec ([inv , fun _ _ s' => inv s' /\ Q s']) in
   let body := [fun s => inv s /\ Is_true (cond s), (fun _ _ s => inv s)] in
   w ⊑ Spec (While_PT inv cond body).
   Proof.
-    unfold "⊑",semantics; apply refineWhilePT.
+    unfold "⊑",semantics; now (apply refineWhilePT).
 Qed.
 
 Definition refineTrans (w2 w1 w3 : WhileL) : 
