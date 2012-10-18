@@ -168,6 +168,7 @@ Proof.
   unfold "⊑",semantics; apply refineSeqPT.
 Qed.
 
+(*
 Lemma refineIf (cond : S -> bool) (pt : PT) : 
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
   let thenBranch := [branchPre (fun s => Is_true (cond s)) 
@@ -177,7 +178,7 @@ Lemma refineIf (cond : S -> bool) (pt : PT) :
   (Spec pt) ⊑ Spec (If_PT cond thenBranch elseBranch).
 Proof.
   unfold "⊑",semantics; apply refineIfPT.
-Qed.
+Qed.*)
 
 Lemma refineWhile (inv : Pow S) (cond : S -> bool) (Q : Pow S) 
   (StrQ : forall s, Is_false (cond s) -> Q s) : 

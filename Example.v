@@ -105,32 +105,17 @@ Proof.
   apply refineSeqAssignPT.
   intros; destruct s; simpl; reflexivity.
   (* Part b *)
-     unfold WBody,evalBExpr.
-     assert (Ha: forall (s : S), 1 + varR s = varQ s <-> Is_false (negb (beq_nat (1 + varR s) (varQ s)))).
+     unfold WBody,evalBExpr,evalExpr.
+     apply refineWhile.
      intros.
-     split; intros.
-     rewrite H; rewrite <- beq_nat_refl.
-     unfold Is_false,negb; trivial.
-     unfold Is_false,negb in H.
-     remember (beq_nat (1 + varR s) (varQ s)) as e; destruct e.
-     apply beq_nat_eq in Heqe; assumption.
+     destruct s as [N P Q R]; simpl in *.
+     destruct Q as [|Q].
      inversion H.
-     (* FIXME: use refineWhile? *)
-     apply refineWhile with (inv := Inv).
-  Admitted.
-(*     assert (d: pre ([Inv, fun (s: S) (_: Inv s) (X: S) => Inv X /\ 1 + varR X = varQ X])
-                ⊂ pre (semantics W3b)).
-     unfold W3b,subset,pre; simpl; intros; split; try assumption.
-     split. 
-     split; inversion H0; assumption.
-     intros; assumption.
-     apply (Refinement _ _ d).
-     intros s Pre s' [Post1 Post2]; split; auto.
-     case_eq (beq_nat (Datatypes.S (varR s')) (varQ s')).
-     intro H; apply (beq_nat_true (Datatypes.S (varR s')) (varQ s') H).
-     change (Is_false (negb (beq_nat (Datatypes.S (varR s')) (varQ s')))) in Post2.
-     intro F; rewrite F in Post2; contradiction.
-Qed.*)
+     case_eq (beq_nat R Q); intros H'.
+     symmetry in H'; apply beq_nat_eq in H'.
+     rewrite H'; reflexivity.
+     rewrite H' in H; inversion H.
+  Qed.
   
 Lemma step4 : WBody ⊑ W4.
   assert_pre WBody W4.
@@ -248,6 +233,8 @@ Lemma step5 : W4 ⊑ W5a ; W5b.
   unfold Inv in *.
   split; destruct s as [N P Q R]; simpl in *; assumption.  
   unfold Inv,W5b.
+
+  unfold "⊑",semantics,W5bThen,W5bElse.
   (* FIXME: use refineIf ? *)
   assert (d: pre ([fun X : S => varR X < varP X < varQ X /\ square (varR X) <= varN X < square (varQ X),
              fun (s : S) (_ : varR s < varP s < varQ s /\ square (varR s) <= varN s < square (varQ s)) 

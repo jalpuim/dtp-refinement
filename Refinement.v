@@ -203,13 +203,55 @@ Definition If_PT (cond : S -> bool) (Then Else : PT) : PT :=
   in
   [ ifPre , ifPost ].
 
+Definition refineTransPT (pt2 pt1 pt3 : PT) : 
+  pt1 ⊏ pt2 -> pt2 ⊏ pt3 -> pt1 ⊏ pt3.
+    intros [pre12 post12] [pre23 post23].
+    set (d (s : S) (pre1s : pre pt1 s) := pre23 s (pre12 s pre1s)).
+    refine (Refinement pt1 pt3 d _).
+    intros s pres s' post3.
+    apply post12; apply post23; auto.
+  Defined.
+
+Definition refineReflPT (pt : PT) : pt ⊏ pt.
+  refine (Refinement pt pt (fun s pres => pres) _).
+  intros; unfold subset; auto.
+  Defined.
+
+Definition refineSplitPT (pt1 pt2 pt3 pt4 : PT) :
+  (pt1 ⊏ pt3) -> (pt2 ⊏ pt4) -> (pt1 ;; pt2) ⊏ (pt3 ;; pt4).
+    intros  [d1 f1] [d2 f2].
+    set (d (s : S) (pres : pre (pt1;; pt2) s) :=
+          existT (fun pres0 : pre pt3 s => forall t : S, post pt3 s pres0 t -> pre pt4 t)
+          (d1 s (proj1_sig pres))
+          (fun (t : S) (post2 : post pt3 s (d1 s (proj1_sig pres)) t) =>
+            d2 t (proj2_sig pres t (f1 s (proj1_sig pres) t post2))) : pre (pt3;;pt4) s 
+      ).
+    apply (Refinement _ _ d).
+    unfold d in *.
+    simpl; intros s Pre s' [t [P Q]].
+    exists t. exists (f1 s (proj1_sig Pre) t P).
+    apply f2; auto.
+  Defined.
+
+Definition refineSplitIfPT (pt1 pt2 pt3 pt4 : PT) (cond : S -> bool) :
+  (pt1 ⊏ pt3) -> (pt2 ⊏ pt4) -> If_PT cond pt1 pt2 ⊏ If_PT cond pt3 pt4.
+  intros [d1 f1] [d2 f2].
+  set (d (s : S) (X : pre (If_PT cond pt1 pt2) s)
+         := (fun C : Is_true (cond s) => d1 s (fst X C),
+             fun C : Is_false (cond s) => d2 s (snd X C)) 
+            : pre (If_PT cond pt3 pt4) s).
+  apply (Refinement _ _ d).    
+  simpl; intros s pres s' [H1 H2].
+  split; intros; [apply f1; apply H1 | apply f2; apply H2]; auto.
+  Defined.
+
 (* Law 5.1 *)
-Lemma refineIfPT (cond : S -> bool) (pt : PT) : 
+Lemma refineIfPT (cond : S -> bool) (pt : PT) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
-  let thenBranch := [branchPre (fun s => Is_true (cond s)) 
-                    , fun s pre s' => post pt s (fst pre) s' ] in
-  let elseBranch := [branchPre (fun s => Is_false (cond s)) ,
-                     fun s pre s' => post pt s (fst pre) s'  ] in
+  let thenBranch := [branchPre (fun s => Is_true (cond s)),
+                     fun s pre s' => post pt s (fst pre) s' ] in
+  let elseBranch := [branchPre (fun s => Is_false (cond s)),
+                     fun s pre s' => post pt s (fst pre) s' ] in
   
   pt ⊏ If_PT cond thenBranch elseBranch.
   Proof.
@@ -217,8 +259,69 @@ Lemma refineIfPT (cond : S -> bool) (pt : PT) :
     set (d (s : S) (X : pre pt s) := 
       (fun H : Is_true (cond s) => (X,H), fun H : Is_false (cond s) => (X,H))).
     apply (Refinement pt (If_PT cond thenBranch elseBranch) d).
-    simpl; intros s pres s'; destruct (cond s); simpl; intros [H1 H2];  auto.
+    simpl; intros s pres s'; destruct (cond s); simpl; intros [H3 H4];  auto.
   Qed.
+
+
+(* Law 5.1 *)
+Lemma refineIfPT' (cond : S -> bool) (pt : PT) (PThen PElse : Pow S) :
+  let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
+  let thenBranch := [branchPre PThen
+                    , fun s pre s' => post pt s (fst pre) s' ] in
+  let elseBranch := [branchPre PElse ,
+                     fun s pre s' => post pt s (fst pre) s'  ] in
+  let thenBranchBool := [branchPre (fun s => Is_true (cond s)), 
+                                     (fun s pre s' => post pt s (fst pre) s')] in
+  let elseBranchBool := [branchPre (fun s => Is_false (cond s)), 
+                                   (fun s pre s' => post pt s (fst pre) s')] in
+  (forall s : S, Is_true (cond s) -> PThen s) ->
+  (forall s : S, Is_false (cond s) -> PElse s) ->
+  pt ⊏ If_PT cond thenBranch elseBranch.
+  Proof.
+    intros.
+    rename H into H1; rename H0 into H2.
+    apply (refineTransPT (If_PT cond thenBranchBool elseBranchBool)).
+
+    set (d (s : S) (X : pre pt s) := 
+      (fun H : Is_true (cond s) => (X,H), fun H : Is_false (cond s) => (X,H))).
+    apply (Refinement pt (If_PT cond thenBranchBool elseBranchBool) d).
+    simpl; intros s pres s'; destruct (cond s); simpl; intros [H3 H4];  auto.
+
+    apply refineSplitIfPT.
+    set (d := (fun (s : S) (X : pre pt s * Is_true (cond s)) => 
+                   (fst X,H1 s (snd X))) : pre thenBranchBool ⊂ pre thenBranch).
+    apply (Refinement _ _ d).
+    unfold subset; intros.
+    simpl in *; assumption.
+
+    set (d := (fun (s : S) (X : pre pt s * Is_false (cond s)) => 
+                   (fst X,H2 s (snd X))) : pre elseBranchBool ⊂ pre elseBranch).
+    apply (Refinement _ _ d).
+    unfold subset; intros.
+    simpl in *; assumption.
+  Qed.
+
+Lemma refineIfPT'' (cond : S -> bool) (pt : PT) (PThen PElse : Pow S) :
+  let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
+  let thenBranch := [PThen , fun s pres s' => { HT : (pre pt s) & post pt s HT s'} ] in
+  let elseBranch := [PElse , fun s pres s' => { HE : (pre pt s) & post pt s HE s'} ] in
+  let thenBranchBool := [branchPre (fun s => Is_true (cond s)), 
+                                   (fun s pres s' => { HT : (pre pt s) & post pt s HT s' &
+                                                       post pt s (fst pres) s'})] in
+  let elseBranchBool := [branchPre (fun s => Is_false (cond s)), 
+                                   (fun s pre s' => post pt s (fst pre) s')] in
+  (forall s : S, (branchPre (fun s => Is_true (cond s))) s -> PThen s) ->
+  (forall s : S, (branchPre (fun s => Is_true (cond s))) s -> PElse s) ->
+  pt ⊏ If_PT cond thenBranch elseBranch.
+Proof.
+  intros.
+  apply (refineTransPT (If_PT cond thenBranchBool elseBranchBool)).
+  set (d (s : S) (X : pre pt s) := 
+      (fun H : Is_true (cond s) => (X,H), fun H : Is_false (cond s) => (X,H))).
+  apply (Refinement pt (If_PT cond thenBranchBool elseBranchBool) d).
+  simpl; intros s pres s'; destruct (cond s); simpl; intros [H3 H4]; auto.
+Admitted.
+  
 
 Lemma IfExtendL (cond : S -> bool) (thenPt elsePt : PT) (U : Pow S) (s : S) :
   extend (If_PT cond thenPt elsePt) U s ->
@@ -297,49 +400,6 @@ Lemma WhileExtendR (inv : Pow S) (cond : S -> bool) (body : PT) (U : Pow S) (s :
     intros; eapply (projT2 (T s0 t)); unfold H in *; assumption.
     intros s' [H1 H2]; apply F; split; assumption.
 Qed.
-    
-    
-Definition refineTransPT (pt2 pt1 pt3 : PT) : 
-  pt1 ⊏ pt2 -> pt2 ⊏ pt3 -> pt1 ⊏ pt3.
-    intros [pre12 post12] [pre23 post23].
-    set (d (s : S) (pre1s : pre pt1 s) := pre23 s (pre12 s pre1s)).
-    refine (Refinement pt1 pt3 d _).
-    intros s pres s' post3.
-    apply post12; apply post23; auto.
-  Defined.
-
-Definition refineReflPT (pt : PT) : pt ⊏ pt.
-  refine (Refinement pt pt (fun s pres => pres) _).
-  intros; unfold subset; auto.
-  Defined.
-
-Definition refineSplitPT (pt1 pt2 pt3 pt4 : PT) :
-  (pt1 ⊏ pt3) -> (pt2 ⊏ pt4) -> (pt1 ;; pt2) ⊏ (pt3 ;; pt4).
-    intros  [d1 f1] [d2 f2].
-    set (d (s : S) (pres : pre (pt1;; pt2) s) :=
-          existT (fun pres0 : pre pt3 s => forall t : S, post pt3 s pres0 t -> pre pt4 t)
-          (d1 s (proj1_sig pres))
-          (fun (t : S) (post2 : post pt3 s (d1 s (proj1_sig pres)) t) =>
-            d2 t (proj2_sig pres t (f1 s (proj1_sig pres) t post2))) : pre (pt3;;pt4) s 
-      ).
-    apply (Refinement _ _ d).
-    unfold d in *.
-    simpl; intros s Pre s' [t [P Q]].
-    exists t. exists (f1 s (proj1_sig Pre) t P).
-    apply f2; auto.
-  Defined.
-
-Definition refineSplitIfPT (pt1 pt2 pt3 pt4 : PT) (cond : S -> bool) :
-  (pt1 ⊏ pt3) -> (pt2 ⊏ pt4) -> If_PT cond pt1 pt2 ⊏ If_PT cond pt3 pt4.
-  intros [d1 f1] [d2 f2].
-  set (d (s : S) (X : pre (If_PT cond pt1 pt2) s)
-         := (fun C : Is_true (cond s) => d1 s (fst X C),
-             fun C : Is_false (cond s) => d2 s (snd X C)) 
-            : pre (If_PT cond pt3 pt4) s).
-  apply (Refinement _ _ d).    
-  simpl; intros s pres s' [H1 H2].
-  split; intros; [apply f1; apply H1 | apply f2; apply H2]; auto.
-  Defined.
 
 Lemma refineBodyPT : forall (inv : Pow S) (cond : S -> bool) (bodyL bodyR : PT),
   bodyL ⊏ bodyR ->
