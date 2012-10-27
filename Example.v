@@ -8,6 +8,62 @@ Require Import While.
 Import While.Language.
 Import While.Semantics.
 
+Module Test.
+Import While.CodeGeneration.
+Import Bool.
+
+Lemma step {SPEC} (R : WhileL) :
+  SPEC ⊑ R ->
+  (exists C, ((R ⊑ C) /\ isExecutable C)) ->
+  exists C, ((SPEC ⊑ C) /\ isExecutable C).
+Proof.
+  intros H1 H2.
+  inversion H2 as [w [H3 H4]].
+  exists w.
+  split; try apply (refineTrans R); assumption.
+Qed.
+
+Definition SWAP := Spec ([fun _ => True, fun s _ s' => varP s = varQ s' /\ varP s' = varQ s]).
+
+Definition SwapAssign := 
+  Spec (Assign_PT (fun s => mkS (varN s) (varQ s) (varP s) (varR s))).
+
+Definition swapResult :
+  SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N).
+Proof.
+  apply (refineTrans
+          (Spec ([fun _ => True , fun s _ s' => varP s = varQ s' /\ varN s' = varQ s]) ; 
+           P ::= Var N)).
+  apply refineFollowAssign.
+  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
+  apply refineSeqAssocR.
+  apply refineSplit; try apply refineRefl.
+  apply (refineTrans
+          (Spec ([fun _ => True , fun s _ s' => varP s = varP s' /\ varN s' = varQ s]) ;
+            Q ::= Var P)).
+  apply refineFollowAssign.
+  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
+  apply refineSplit; try apply refineRefl.
+  apply refineAssign.
+  simpl; intros.
+  destruct s as [N P Q R]; simpl.
+  split; reflexivity.
+Defined.
+
+Lemma foo : 
+  exists c, ((SWAP ⊑ c) /\ isExecutable c).
+Proof.
+  apply (step (N ::= Var P)).  
+  apply refineAssign.
+  unfold semantics.
+  simpl.
+  intros.
+  destruct s.
+  simpl.
+Admitted.
+
+End Test.
+
 Module Definitions.
 
 Definition square : nat -> nat := fun n => n * n.
@@ -152,7 +208,6 @@ Lemma step4 : WBody ⊑ W4.
   intros; inversion H as [x [H1 x']]; assumption.
 Qed.
 
-
 Lemma step5 : W4 ⊑ W5a ; W5b.
   apply refineSplit.
   simpl.
@@ -161,11 +216,12 @@ Lemma step5 : W4 ⊑ W5a ; W5b.
   intros s H.
   split.
   destruct s as [N P Q R].
+  unfold Inv in H.
   simpl in *.
-  split.
+  split.  
   inversion H as [H1 H2].
 
- (** even-odd approach **)
+  (** even-odd approach **)
   assert (Ha: even R \/ odd R).
   apply even_or_odd. destruct Ha as [Reven|Rodd].
 
@@ -233,9 +289,7 @@ Lemma step5 : W4 ⊑ W5a ; W5b.
   unfold Inv in *.
   split; destruct s as [N P Q R]; simpl in *; assumption.  
   unfold Inv,W5b.
-
   unfold "⊑",semantics,W5bThen,W5bElse.
-  (* FIXME: use refineIf ? *)
   assert (d: pre ([fun X : S => varR X < varP X < varQ X /\ square (varR X) <= varN X < square (varQ X),
              fun (s : S) (_ : varR s < varP s < varQ s /\ square (varR s) <= varN s < square (varQ s)) 
              (X : S) => square (varR X) <= varN X < square (varQ X)])
@@ -299,9 +353,9 @@ Proof.
   split; auto.
 Qed.
 
-Definition prgrm := W3a ;
+Definition prgrm := (R ::= (EConst 0) ; Q ::= (Plus (EConst 1) (Var N))) ;
   (While Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))
-         (W5a ; (If (Lt (Var N) (Mult (Var P) (Var P))) 
+         (P ::= (Div2 (Plus (Var Q) (Var R))) ; (If (Lt (Var N) (Mult (Var P) (Var P))) 
                       (Q ::= (Var P)) 
                       (R ::= (Var P))))).
 
@@ -324,6 +378,13 @@ Proof.
 Qed.
 
 Require Import String.
-Compute (toCode prgrm prgrmProof 0).
+Compute (whileToCode prgrm prgrmProof).
+
+(*
+Extraction Language Haskell.
+Extraction "Example.hs" prgrm.
+*)
+
 
 End Proof.
+

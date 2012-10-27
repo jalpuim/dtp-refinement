@@ -70,6 +70,10 @@ Inductive WhileL : Type :=
 Notation "w1 ; w2" := (Seq w1 w2) (at level 52, right associativity).
 Notation "id ::= exp" := (Assign id exp) (at level 52).
 
+(*
+Extraction Language Haskell.
+Extraction "While.hs" WhileL.
+*)
 End Language.
 
 Module Semantics.
@@ -161,6 +165,29 @@ Proof.
   symmetry; apply H.
 Qed.
 
+Definition subst (id : Identifier) (exp : Expr) (s : S) : S := 
+   setIdent id (evalExpr exp s) s.
+
+(* TODO: Finish this *)
+Lemma refineFollowAssign (id : Identifier) (exp : Expr) (P : Pow S) 
+(Q Q' : forall (s : S), P s -> Pow S) :
+  let w  := Spec ([P,Q]) in
+  let w' := Spec ([P,Q']) in
+  (forall s pres s', Q' s pres s' -> Q s pres (subst id exp s')) ->
+  w ⊑ (w' ; id ::= exp).
+Proof.
+  intros w w' HQ.
+  assert (d: pre (semantics w) ⊂ pre (semantics (w' ; id ::= exp))).
+  unfold subset; simpl; intros. 
+  exists H; intros; trivial. 
+  apply (Refinement _ _ d).  
+  unfold subset; simpl; intros.
+  inversion H as [s' H1].
+  inversion H1 as [H2 H3].
+  rewrite H3.
+  apply HQ.  
+Admitted.
+
 Lemma refineSeq (Pre Mid Post : Pow S) :
   let w := Spec ([ Pre , fun _ _ s' => Post s' ]) in
   w ⊑ (Spec ([Pre , (fun _ _ s' => Mid s') ]) ; Spec ([Mid , (fun _ _ s' => Post s') ])).
@@ -168,17 +195,45 @@ Proof.
   unfold "⊑",semantics; apply refineSeqPT.
 Qed.
 
-(*
-Lemma refineIf (cond : S -> bool) (pt : PT) : 
+(* TODO: Finish this *)
+Lemma refineSeqAssocR : forall (w w1 w2 w3 : WhileL),
+  (w ⊑ (w1 ; w2) ; w3) -> (w ⊑ w1 ; w2 ; w3).
+Proof.
+  intros w w1.
+  unfold wrefines.
+  simpl.
+  induction w1.
+  destruct w2.
+  simpl.
+  unfold Skip_PT, Seq_PT.
+  simpl.
+  intros.
+Admitted.
+
+(* TODO: Finish this *)
+Lemma seqAssoc : forall (w1 w2 w3 : WhileL),
+  semantics (w1 ; w2 ; w3) = semantics ((w1 ; w2) ; w3).
+Proof.
+  intros w1.
+  induction w1.
+  simpl.
+  destruct w2.
+  simpl.
+  unfold Skip_PT,Seq_PT.
+  simpl.
+  intros.
+Admitted.
+
+Lemma refineIfPT (cond : S -> bool) (pt : PT) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
-  let thenBranch := [branchPre (fun s => Is_true (cond s)) 
-                    , fun s pre s' => post pt s (fst pre) s' ] in
-  let elseBranch := [branchPre (fun s => Is_false (cond s)) ,
-                     fun s pre s' => post pt s (fst pre) s'  ] in
+  let thenBranch := [branchPre (fun s => Is_true (cond s)),
+                     fun s pre s' => post pt s (fst pre) s' ] in
+  let elseBranch := [branchPre (fun s => Is_false (cond s)),
+                     fun s pre s' => post pt s (fst pre) s' ] in
   (Spec pt) ⊑ Spec (If_PT cond thenBranch elseBranch).
 Proof.
   unfold "⊑",semantics; apply refineIfPT.
-Qed.*)
+Qed.
 
 Lemma refineWhile (inv : Pow S) (cond : S -> bool) (Q : Pow S) 
   (StrQ : forall s, Is_false (cond s) -> Q s) : 
@@ -268,7 +323,7 @@ Fixpoint exprToCode (e: Expr) : string :=
   | Plus x y  => exprToCode x ++ " + " ++ exprToCode y
   | Minus x y => exprToCode x ++ " - " ++ exprToCode y
   | Mult x y  => exprToCode x ++ " * " ++ exprToCode y
-  | Div2 x    => exprToCode x ++ " / 2"
+  | Div2 x    => "(" ++ exprToCode x ++ ") / 2"
   end.
 
 Fixpoint bExprToCode (e: BExpr) : string :=
@@ -310,29 +365,49 @@ Proof. intros; assumption. Qed.
 
 Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
   match w as w' return (isExecutable w' -> nat -> string) with
-  | Skip           => fun _ _  => ((sp indent) ++ "skip")
+  | Skip           => fun _ _  => ((sp indent) ++ "skip;")
   | Assign id exp  => fun _ _ => 
-                      ((sp indent) ++ (identToCode id) ++ " := " ++ (exprToCode exp))
+                      ((sp indent) ++ (identToCode id) ++ " = " ++ (exprToCode exp)) ++ ";"
   | Seq w1 w2      => fun p' i' => 
-                      (toCode w1 (isExecSeq1 w1 w2 p') i') ++ ";\n" ++ 
+                      (toCode w1 (isExecSeq1 w1 w2 p') i') ++ "
+" ++ 
                       (toCode w2 (isExecSeq2 w1 w2 p') i')
   | If c t e       => fun p' i' =>
-                      (sp indent) ++ "if " ++ (bExprToCode c) ++ "\n" ++
-                      (sp indent) ++ "then \n" ++ 
-                      (sp indent) ++ "{\n" ++ 
-                      (toCode t (isExecThen c t e p') (i'+4)) ++ "\n" ++
-                      (sp indent) ++ "}\n" ++
-                      (sp indent) ++ "else \n" ++ 
-                      (sp indent) ++ "{\n" ++ 
-                      (toCode e (isExecElse c t e p') (i'+4)) ++ "\n" ++
+                      (sp indent) ++ "if " ++ (bExprToCode c) ++ "
+" ++
+                      (sp indent) ++ "{
+" ++ 
+                      (toCode t (isExecThen c t e p') (i'+4)) ++ "
+" ++
+                      (sp indent) ++ "}
+" ++
+                      (sp indent) ++ "else 
+" ++ 
+                      (sp indent) ++ "{
+" ++ 
+                      (toCode e (isExecElse c t e p') (i'+4)) ++ "
+" ++
                       (sp indent) ++ "}"
   | While inv c b  => fun p' i' =>
-                      (sp indent) ++ "while " ++ (bExprToCode c) ++ "\n" ++
-                      (sp indent) ++ "{\n" ++
-                      (sp indent) ++ (toCode b (isExecBody inv c b p') (i'+4)) ++ "\n" ++
+                      (sp indent) ++ "while (" ++ (bExprToCode c) ++ ")
+" ++
+                      (sp indent) ++ "{
+" ++
+                      (toCode b (isExecBody inv c b p') (i'+4)) ++ "
+" ++
                       (sp indent) ++ "}"
   | Spec pt        => fun p' i' => match p' with 
                                    end
   end p indent.
+
+Definition wrapMain (code : string) : string :=
+"int main() {
+    int n,p,q,r;
+" ++ code ++ "
+    return 0;
+}".
+
+Definition whileToCode (w: WhileL) (p: isExecutable w) : string :=
+  wrapMain (toCode w p 4).
 
 End CodeGeneration.
