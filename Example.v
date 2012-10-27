@@ -25,9 +25,6 @@ Qed.
 
 Definition SWAP := Spec ([fun _ => True, fun s _ s' => varP s = varQ s' /\ varP s' = varQ s]).
 
-Definition SwapAssign := 
-  Spec (Assign_PT (fun s => mkS (varN s) (varQ s) (varP s) (varR s))).
-
 Definition swapResult :
   SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N).
 Proof.
@@ -50,17 +47,39 @@ Proof.
   split; reflexivity.
 Defined.
 
-Lemma foo : 
-  exists c, ((SWAP ⊑ c) /\ isExecutable c).
+Lemma stop : forall (w : WhileL),
+  isExecutable w ->
+  exists (C : WhileL), (w ⊑ C) /\ isExecutable C.
 Proof.
-  apply (step (N ::= Var P)).  
+  intros w; exists w; split; [apply refineRefl | assumption].
+Qed.
+
+Ltac stop :=  
+  match goal with  
+  | [ |- ex ?C ] => try apply stop; unfold isExecutable; try auto
+  end. 
+
+Lemma swapTest : 
+  exists c, ((SWAP ⊑ c) /\ isExecutable c).
+Proof.  
+  apply (step (Spec ([fun _ => True , fun s _ s' => varP s = varQ s' /\ varN s' = varQ s]) ; 
+           P ::= Var N)).  
+  apply refineFollowAssign.
+  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
+  apply (step ((Spec ([fun _ => True , fun s _ s' => varP s = varP s' /\ varN s' = varQ s]) ;
+            Q ::= Var P); P ::= Var N)).
+  apply refineSplit; try apply refineRefl.
+  apply refineFollowAssign.
+  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
+  apply (step (((N ::= Var Q) ; Q ::= Var P); 
+                 P ::= Var N)).
+  repeat apply refineSplit; try apply refineRefl.
   apply refineAssign.
-  unfold semantics.
-  simpl.
-  intros.
-  destruct s.
-  simpl.
-Admitted.
+  simpl; intros.
+  destruct s as [N P Q R]; simpl.
+  split; reflexivity.
+  stop.
+Qed.
 
 End Test.
 
