@@ -1,0 +1,4 @@
+module {CodeGen.AG} {} {}
+
+include "AG/Base.ag"
+include "AG/CodeGen.ag"

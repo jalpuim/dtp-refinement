@@ -1,0 +1,156 @@
+-------------------------------------------------------
+-- Operator's precedence  
+-------------------------------------------------------
+
+{
+-- Precedence levels for Expr
+precPlus  = 65
+precMinus = 70
+precMult  = 75
+precDiv   = 80
+
+-- Precedence levels for BExpr
+precAnd = 25 
+precOr  = 30  
+precLT  = 35 
+precGT  = 40
+precLE  = 45
+precGE  = 50
+precEQ  = 55   
+precNot = 60 
+}
+
+attr Expr BExpr 
+  inh prec :: Int
+
+sem Expr
+  | Plus   x.prec = precPlus
+           y.prec = precPlus
+  | Minus  x.prec = precMinus
+           y.prec = precMinus
+  | Mult   x.prec = precMult
+           y.prec = precMult
+  | Div2   x.prec = precDiv
+
+sem BExpr 
+  | And    a.prec = precAnd
+           b.prec = precAnd
+  | Or     a.prec = precOr
+           b.prec = precOr
+  | Not    b.prec = precNot 
+  | Eq     a.prec = precEQ
+           b.prec = precEQ
+  | Lt     a.prec = precLT
+           b.prec = precLT
+  | Le     a.prec = precLE
+           b.prec = precLE
+  | Gt     a.prec = precGT
+           b.prec = precGT
+  | Ge     a.prec = precGE
+           b.prec = precGE
+
+sem WhileL 
+  | Assign e.prec = 0
+  | If     c.prec = 0 
+  | While  c.prec = 0
+
+-------------------------------------------------------
+-- Indentation 
+-------------------------------------------------------
+
+{
+-- Number of spaces per "indentation level"
+nSpaces = 4
+
+-- Produce a string with n spaces 
+spaces :: Int -> String
+spaces n = take n (repeat ' ')
+}
+
+attr WhileL
+  inh indent :: Int
+
+sem WhileL
+  | If     t.indent = @lhs.indent + nSpaces 
+           e.indent = @lhs.indent + nSpaces 
+  | While  b.indent = @lhs.indent + nSpaces
+
+-------------------------------------------------------
+-- Code generation
+-------------------------------------------------------
+
+{
+-- Conversion from Coq's natural number datatype to Int
+natToInt :: Nat -> Int
+natToInt O     = 0
+natToInt (S n) = succ (natToInt n)
+
+-- Show instance for Coq's natural number datatype
+instance Show Nat where
+  show = show . natToInt
+}
+
+
+attr Expr BExpr WhileL
+  syn code :: String
+
+sem Expr
+  | Var    lhs.code = show @v 
+  | EConst lhs.code = show @c
+  | Plus   lhs.code = if (@lhs.prec > precPlus) 
+                      then "(" ++ @x.code ++ " + " ++ @y.code ++ ")" 
+                      else @x.code ++ " + " ++ @y.code
+  | Minus  lhs.code = if (@lhs.prec > precMinus) 
+                      then "(" ++ @x.code ++ " - " ++ @y.code ++ ")" 
+                      else @x.code ++ " - " ++ @y.code
+  | Mult   lhs.code = if (@lhs.prec > precMult) 
+                      then "(" ++ @x.code ++ " * " ++ @y.code ++ ")" 
+                      else @x.code ++ " * " ++ @y.code
+  | Div2   lhs.code = if (@lhs.prec > precDiv) 
+                      then "(" ++ @x.code ++ " / 2)" 
+                      else @x.code ++ " / 2"
+
+sem BExpr
+  | BConst lhs.code = show @b
+  | And    lhs.code = if (@lhs.prec > precAnd)
+                      then "(" ++ @a.code ++ " && " ++ @b.code ++ ")"
+                      else @a.code ++ " && " ++ @b.code
+  | Or     lhs.code = if (@lhs.prec > precOr)
+                      then "(" ++ @a.code ++ " || " ++ @b.code ++ ")"
+                      else @a.code ++ " || " ++ @b.code
+  | Not    lhs.code = '!':(@b.code)
+  | Eq     lhs.code = if (@lhs.prec > precEQ)
+                      then "(" ++ @a.code ++ " == " ++ @b.code ++ ")"
+                      else @a.code ++ " == " ++ @b.code
+  | Lt     lhs.code = if (@lhs.prec > precLT)
+                      then "(" ++ @a.code ++ " < " ++ @b.code ++ ")"
+                      else @a.code ++ " < " ++ @b.code
+  | Le     lhs.code = if (@lhs.prec > precLE)
+                      then "(" ++ @a.code ++ " <= " ++ @b.code ++ ")"
+                      else @a.code ++ " <= " ++ @b.code
+  | Gt     lhs.code = if (@lhs.prec > precGT)
+                      then "(" ++ @a.code ++ " > " ++ @b.code ++ ")"
+                      else @a.code ++ " > " ++ @b.code
+  | Ge     lhs.code = if (@lhs.prec > precGE)
+                      then "(" ++ @a.code ++ " >= " ++ @b.code ++ ")"
+                      else @a.code ++ " >= " ++ @b.code
+
+sem WhileL
+  | Skip   lhs.code = (spaces @lhs.indent) ++ ";\n" 
+  | Assign lhs.code = (spaces @lhs.indent) ++ 
+                      (show @i) ++ " = " ++ @e.code ++ ";\n"
+  | Seq    lhs.code = @w1.code ++ @w2.code 
+  | If     lhs.code = (spaces @lhs.indent) ++ "if (" ++ @c.code ++ ")\n" ++ 
+                      (spaces @lhs.indent) ++ "{\n" ++
+                      @t.code ++
+                      (spaces @lhs.indent) ++ "}\n" ++
+                      (spaces @lhs.indent) ++ "else\n" ++
+                      (spaces @lhs.indent) ++ "{\n" ++
+                      @e.code ++
+                      (spaces @lhs.indent) ++ "}\n" 
+  | While  lhs.code = (spaces @lhs.indent) ++ "while (" ++ @c.code ++ ")\n" ++
+                      (spaces @lhs.indent) ++ "{\n" ++
+                      @b.code ++ 
+                      (spaces @lhs.indent) ++ "}\n" 
+  | Spec   lhs.code = error "Trying to derive a program which is not executable."
+

@@ -61,7 +61,7 @@ Ltac stop :=
 
 Lemma swapTest : 
   exists c, ((SWAP ⊑ c) /\ isExecutable c).
-Proof.  
+Proof.
   apply (step (Spec ([fun _ => True , fun s _ s' => varP s = varQ s' /\ varN s' = varQ s]) ; 
            P ::= Var N)).  
   apply refineFollowAssign.
@@ -140,6 +140,7 @@ Module Proof.
 Import Definitions.
 Import While.CodeGeneration.
 Import Bool.
+Import Test.
 
 Ltac refine_post_pt pt1 pt2 := apply (Refinement _ _ (fun s (y : pre pt1 s) => y : pre pt2 s)). 
 
@@ -391,6 +392,23 @@ Proof.
   unfold W5b; apply refineSplitIf; [apply step6Then | apply step6Else]. 
 Qed.
 
+Lemma resultTest : 
+  exists c, ((WSPEC ⊑ c) /\ isExecutable c).
+Proof.
+  unfold WSPEC.
+  apply (step W1).
+  apply step1.
+  unfold W1.
+  apply (step W2).
+  apply step2.
+  unfold W2.
+  apply (step (W3a ; W3b)).
+  apply step3.
+  unfold W3a,W3b,W3aa,W3ab.
+  
+  
+Admitted.
+
 Lemma prgrmProof : isExecutable prgrm.
 Proof.  
   unfold prgrm,isExecutable; simpl; auto.
@@ -401,7 +419,7 @@ Compute (whileToCode prgrm prgrmProof).
 
 (*
 Extraction Language Haskell.
-Extraction "Example.hs" prgrm.
+Extraction "Program.hs" prgrm.
 *)
 
 

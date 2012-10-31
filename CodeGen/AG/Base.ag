@@ -1,0 +1,44 @@
+{
+data Nat =
+    O
+  | S Nat
+
+data Identifier = 
+    N
+  | P
+  | Q
+  | R
+  deriving Show
+}
+
+data Expr 
+  | Var    v :: {Identifier}
+  | EConst c :: {Nat}
+  | Plus   x :: Expr        y :: Expr
+  | Minus  x :: Expr        y :: Expr
+  | Mult   x :: Expr        y :: Expr
+  | Div2   x :: Expr
+
+data BExpr 
+  | BConst b :: {Bool}
+  | And    a :: BExpr b :: BExpr
+  | Or     a :: BExpr b :: BExpr
+  | Not    b :: BExpr
+  | Eq     a :: Expr  b :: Expr
+  | Lt     a :: Expr  b :: Expr
+  | Le     a :: Expr  b :: Expr
+  | Gt     a :: Expr  b :: Expr
+  | Ge     a :: Expr  b :: Expr
+
+{
+data PT = Predicate
+}
+
+data WhileL 
+  | Skip
+  | Assign i  :: Identifier e  :: Expr
+  | Seq    w1 :: WhileL     w2 :: WhileL
+  | If     c  :: BExpr      t  :: WhileL  e :: WhileL
+  | While  c  :: BExpr      b  :: WhileL
+  | Spec   p  :: PT
+
