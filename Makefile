@@ -1,4 +1,8 @@
+UUFLAGS = -dcfswH
+
 default: coq
+
+all: coq ag
 
 coq: show refinement while auxproofs example 
 
@@ -23,5 +27,11 @@ AuxiliaryProofs.vo: AuxiliaryProofs.v
 Example.vo: Show.vo Refinement.vo While.vo AuxiliaryProofs.vo Example.v
 	coqc Example.v
 
+ag: CodeGen/AG.hs
+
+CodeGen/AG.hs: CodeGen/AG.ag CodeGen/AG/Base.ag CodeGen/AG/CodeGen.ag
+	cd CodeGen/; uuagc $(UUFLAGS) AG.ag; cd -
+
 clean:
-	rm -f *.vo *.glob 
+	rm -f *.vo *.glob
+	rm -f CodeGen/AG.hs
