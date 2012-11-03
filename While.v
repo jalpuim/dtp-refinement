@@ -364,20 +364,20 @@ Lemma isExecBody : forall inv c b, isExecutable (While inv c b) -> isExecutable 
 Proof. intros; assumption. Qed.
 
 Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
-  match w as w' return (isExecutable w' -> nat -> string) with
-  | Skip           => fun _ _  => ((sp indent) ++ "skip;")
-  | Assign id exp  => fun _ _ => 
+  match w as w' return (isExecutable w' -> string) with
+  | Skip           => fun _ => ((sp indent) ++ "skip;")
+  | Assign id exp  => fun _ => 
                       ((sp indent) ++ (identToCode id) ++ " = " ++ (exprToCode exp)) ++ ";"
-  | Seq w1 w2      => fun p' i' => 
-                      (toCode w1 (isExecSeq1 w1 w2 p') i') ++ "
+  | Seq w1 w2      => fun p' => 
+                      (toCode w1 (isExecSeq1 w1 w2 p') indent) ++ "
 " ++ 
-                      (toCode w2 (isExecSeq2 w1 w2 p') i')
-  | If c t e       => fun p' i' =>
+                      (toCode w2 (isExecSeq2 w1 w2 p') indent)
+  | If c t e       => fun p' =>
                       (sp indent) ++ "if " ++ (bExprToCode c) ++ "
 " ++
                       (sp indent) ++ "{
 " ++ 
-                      (toCode t (isExecThen c t e p') (i'+4)) ++ "
+                      (toCode t (isExecThen c t e p') (indent+4)) ++ "
 " ++
                       (sp indent) ++ "}
 " ++
@@ -385,20 +385,20 @@ Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
 " ++ 
                       (sp indent) ++ "{
 " ++ 
-                      (toCode e (isExecElse c t e p') (i'+4)) ++ "
+                      (toCode e (isExecElse c t e p') (indent+4)) ++ "
 " ++
                       (sp indent) ++ "}"
-  | While inv c b  => fun p' i' =>
+  | While inv c b  => fun p' =>
                       (sp indent) ++ "while (" ++ (bExprToCode c) ++ ")
 " ++
                       (sp indent) ++ "{
 " ++
-                      (toCode b (isExecBody inv c b p') (i'+4)) ++ "
+                      (toCode b (isExecBody inv c b p') (indent+4)) ++ "
 " ++
                       (sp indent) ++ "}"
-  | Spec pt        => fun p' i' => match p' with 
-                                   end
-  end p indent.
+  | Spec pt        => fun p' => match p' with 
+                                end
+  end p.
 
 Definition wrapMain (code : string) : string :=
 "int main() {

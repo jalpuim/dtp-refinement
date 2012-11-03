@@ -241,69 +241,21 @@ Lemma step5 : W4 ⊑ W5a ; W5b.
   split.  
   inversion H as [H1 H2].
 
-  (** even-odd approach **)
-  assert (Ha: even R \/ odd R).
-  apply even_or_odd. destruct Ha as [Reven|Rodd].
-
-  (* varR0 even *)
-  assert (Ha: even Q \/ odd Q). apply even_or_odd. destruct Ha as [Qeven|Qodd].
-
-  (* varR0 even, varQ0 even *)
-  rewrite <- div2_double at 1. unfold "*". rewrite <- plus_n_O.
-  rewrite even_plus_div2. rewrite even_plus_div2. apply plus_lt_compat_r.
-  apply even_even_lt_div2. split; trivial. apply le_Sn_le in H1. exact H1. trivial. trivial.
-
-  (* varR0 even, varQ0 odd *)
-  rewrite plus_comm. rewrite even_plus_div2. rewrite plus_comm. 
-  rewrite <- div2_double at 1. unfold "*". rewrite <- plus_n_O. rewrite even_plus_div2. 
-  apply plus_lt_compat_r. apply even_odd_lt_div2. split; trivial. trivial. trivial. trivial.
-
-  (* varR0 odd *)
-  assert (Ha: even Q \/ odd Q). apply even_or_odd. destruct Ha as [Qeven|Qodd].
-  
-  (* varR0 odd, varQ0 even *)
-  rewrite <- div2_double at 1. unfold "*". rewrite <- plus_n_O. rewrite odd_odd_plus_div2. 
-  rewrite even_plus_div2. rewrite <- plus_Sn_m. apply plus_lt_compat_r. 
-  apply odd_even_lt_div2. split; trivial. trivial. trivial. split; trivial.
-
-  (* varR0 odd, varQ0 odd *)
-  rewrite <- div2_double at 1. unfold "*". rewrite <- plus_n_O. rewrite odd_odd_plus_div2. 
-  rewrite odd_odd_plus_div2. apply lt_n_S. apply plus_lt_compat_r. apply odd_odd_lt_div2. 
-  split; trivial. apply le_Sn_le in H1. trivial. split; trivial. split; trivial.
-  (** end goal **)
+  apply plus_lt_compat_r with (p:=R) in H1.
+  simpl in H1.
+  apply lt_S_div2 in H1.
+  replace (R + R) with (2*R) in H1 by (omega).
+  rewrite div2_double in H1.
+  apply H1.
 
   inversion H as [H1 H2].
-
-  (** even-odd approach **)
-  assert (Ha: even R \/ odd R). apply even_or_odd. destruct Ha as [Reven|Rodd].
-  (* varR0 even *)
-  assert (Ha: even Q \/ odd Q). apply even_or_odd. destruct Ha as [Qeven|Qodd].
-  
-  (* varR0 even, varQ0 even *)
-  rewrite <- div2_double. unfold "*". rewrite <- plus_n_O. rewrite even_plus_div2. 
-  rewrite even_plus_div2. rewrite plus_comm. apply plus_lt_compat_r. 
-  apply even_even_lt_div2. split; trivial. apply le_Sn_le in H1. exact H1. trivial. trivial.
-
-  (* varR0 even, varQ0 odd *)
-  rewrite <- div2_double. unfold "*". rewrite <- plus_n_O. rewrite plus_comm. 
-  rewrite even_plus_div2. rewrite odd_odd_plus_div2. rewrite <- plus_Sn_m. 
-  apply plus_lt_compat_r. apply lt_S. apply even_odd_lt_div2. split; trivial. trivial. 
-  split; trivial. trivial.
-
-  (* varR0 odd *)
-  assert (Ha: even Q \/ odd Q). apply even_or_odd. destruct Ha as [Qeven|Qodd].
-  
-  (* varR0 odd, varQ0 even *)
-  rewrite <- div2_double. unfold "*". rewrite <- plus_n_O. rewrite even_plus_div2. 
-  rewrite even_plus_div2. rewrite plus_comm. apply plus_lt_compat_r. apply le_Sn_le. 
-  apply odd_even_lt_div2. split; trivial. trivial. trivial. trivial.
-
-  (* varR0 odd, varQ0 odd *)
-  rewrite <- div2_double. unfold "*". rewrite <- plus_n_O. rewrite odd_odd_plus_div2. 
-  rewrite odd_odd_plus_div2. apply lt_n_S. rewrite plus_comm. apply plus_lt_compat_r. 
-  apply odd_odd_lt_div2. split; trivial. apply le_Sn_le in H1. trivial. split; trivial. 
-  split; trivial.
-  (** end goal **)
+  apply plus_lt_compat_r with (p:=Q) in H1.
+  simpl in H1.
+  apply lt_S_div2 in H1.
+  replace (Q + Q) with (2*Q) in H1 by (omega).
+  rewrite div2_double in H1.
+  rewrite plus_comm in H1.
+  apply H1.
 
   inversion H as [H1 [H2 H3]].
   unfold Inv in *.
@@ -405,7 +357,7 @@ Proof.
   apply (step (W3a ; W3b)).
   apply step3.
   unfold W3a,W3b,W3aa,W3ab.
-  
+
   
 Admitted.
 

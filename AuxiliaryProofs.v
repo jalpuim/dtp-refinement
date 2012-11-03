@@ -287,4 +287,30 @@ Proof.
   assumption.
 Qed.
 
+Theorem lt_S_div2 : forall m n,
+  Datatypes.S n < m ->
+  div2 n < div2 m. 
+Proof.
+  intros m.
+  induction m as [ | | m Hm] using ind_0_1_SS.
+  intros.
+  inversion H.
+  intros.
+  destruct n.
+  inversion H; inversion H1.
+  inversion H; inversion H1.
+  intros n H.
+  induction n as [ | | n Hn] using ind_0_1_SS.
+  intros.
+  simpl; apply lt_0_Sn.
+  intros.
+  simpl; apply lt_0_Sn.
+  intros.
+  simpl.
+  apply lt_n_S.
+  apply Hm.
+  repeat apply lt_S_n in H.
+  assumption.
+Qed.
+
 End LtProofs.
