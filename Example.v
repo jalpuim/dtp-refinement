@@ -238,24 +238,23 @@ Lemma step5 : W4 ⊑ W5a ; W5b.
   destruct s as [N P Q R].
   unfold Inv in H.
   simpl in *.
-  split.  
   inversion H as [H1 H2].
+  split.  
 
   apply plus_lt_compat_r with (p:=R) in H1.
   simpl in H1.
   apply lt_S_div2 in H1.
-  replace (R + R) with (2*R) in H1 by (omega).
+  replace (R + R) with (2 * R) in H1 by (omega).
   rewrite div2_double in H1.
-  apply H1.
+  assumption.
 
-  inversion H as [H1 H2].
   apply plus_lt_compat_r with (p:=Q) in H1.
   simpl in H1.
   apply lt_S_div2 in H1.
-  replace (Q + Q) with (2*Q) in H1 by (omega).
+  replace (Q + Q) with (2 * Q) in H1 by (omega).
   rewrite div2_double in H1.
   rewrite plus_comm in H1.
-  apply H1.
+  assumption.
 
   inversion H as [H1 [H2 H3]].
   unfold Inv in *.
@@ -344,6 +343,24 @@ Proof.
   unfold W5b; apply refineSplitIf; [apply step6Then | apply step6Else]. 
 Qed.
 
+Lemma stepSeqSpec : forall (Pre Mid Post : Pow S),
+  (Spec ([Pre , (fun _ _ s' => Post s')]) ⊑ 
+    (Spec ([Pre , (fun _ _ s' => Mid s')])) ; (Spec ([Mid , (fun _ _ s' => Post s')]))) ->
+  (exists c, (Spec ([Pre , (fun _ _ s' => Mid s')]) ⊑ c)) ->
+  (exists c, (Spec ([Mid , (fun _ _ s' => Post s')]) ⊑ c)) ->
+  exists c, (Spec ([Pre , (fun _ _ s' => Post s')]) ⊑ c).
+Proof.
+  intros Pre Mid Post H1 H2 H3.
+  inversion H2 as [c' H4].
+  inversion H3 as [c'' H5].
+  exists (c' ; c'').
+  apply (refineTrans (Spec ([Pre, fun (s : S) (_ : Pre s) (s' : S) => Mid s']);
+         Spec ([Mid, fun (s : S) (_ : Mid s) (s' : S) => Post s']))).
+  assumption.
+  apply refineSplit; assumption.
+Qed.
+  
+
 Lemma resultTest : 
   exists c, ((WSPEC ⊑ c) /\ isExecutable c).
 Proof.
@@ -351,6 +368,7 @@ Proof.
   apply (step W1).
   apply step1.
   unfold W1.
+  Print W2.
   apply (step W2).
   apply step2.
   unfold W2.
@@ -366,8 +384,10 @@ Proof.
   unfold prgrm,isExecutable; simpl; auto.
 Qed.
 
+(*
 Require Import String.
 Compute (whileToCode prgrm prgrmProof).
+*)
 
 (*
 Extraction Language Haskell.

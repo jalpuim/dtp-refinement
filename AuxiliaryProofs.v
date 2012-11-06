@@ -300,13 +300,7 @@ Proof.
   inversion H; inversion H1.
   inversion H; inversion H1.
   intros n H.
-  induction n as [ | | n Hn] using ind_0_1_SS.
-  intros.
-  simpl; apply lt_0_Sn.
-  intros.
-  simpl; apply lt_0_Sn.
-  intros.
-  simpl.
+  induction n as [ | | n Hn] using ind_0_1_SS; simpl; try apply lt_0_Sn.
   apply lt_n_S.
   apply Hm.
   repeat apply lt_S_n in H.
