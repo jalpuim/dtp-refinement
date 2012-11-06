@@ -10,6 +10,7 @@ show: Show.vo
 refinement: Refinement.vo
 while: While.vo
 auxproofs: AuxiliaryProofs.vo
+usability: Usability.vo
 example: Example.vo
 
 Show.vo: Show.v
@@ -24,7 +25,10 @@ While.vo: Show.vo Refinement.vo While.v
 AuxiliaryProofs.vo: AuxiliaryProofs.v
 	coqc AuxiliaryProofs.v
 
-Example.vo: Show.vo Refinement.vo While.vo AuxiliaryProofs.vo Example.v
+Usability.vo: Refinement.vo While.vo Usability.v
+	coqc Usability.v
+
+Example.vo: Show.vo Refinement.vo While.vo AuxiliaryProofs.vo Usability.vo Example.v
 	coqc Example.v
 
 ag: CodeGen/AG.hs

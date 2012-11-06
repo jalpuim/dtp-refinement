@@ -70,6 +70,16 @@ Inductive WhileL : Type :=
 Notation "w1 ; w2" := (Seq w1 w2) (at level 52, right associativity).
 Notation "id ::= exp" := (Assign id exp) (at level 52).
 
+Fixpoint isExecutable (w: WhileL) : Prop :=
+  match w with 
+  | Skip          => True
+  | Assign id exp => True
+  | Seq st1 st2   => (isExecutable st1) /\ (isExecutable st2)
+  | If c t e      => (isExecutable t) /\ (isExecutable e)
+  | While inv c b => isExecutable b
+  | Spec pt       => False
+end.
+
 (*
 Extraction Language Haskell.
 Extraction "While.hs" WhileL.
@@ -78,7 +88,7 @@ End Language.
 
 Module Semantics.
 
-Export Language.
+Import Language.
 
 Definition setIdent (ident: Identifier) (n : nat) : S -> S :=
   match ident with
@@ -294,17 +304,7 @@ End Semantics.
 
 Module CodeGeneration.
 
-Export Language.
-
-Fixpoint isExecutable (w: WhileL) : Prop :=
-  match w with 
-  | Skip          => True
-  | Assign id exp => True
-  | Seq st1 st2   => (isExecutable st1) /\ (isExecutable st2)
-  | If c t e      => (isExecutable t) /\ (isExecutable e)
-  | While inv c b => isExecutable b
-  | Spec pt       => False
-end.
+Import Language.
 
 Open Local Scope string_scope.
 

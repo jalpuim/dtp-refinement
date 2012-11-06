@@ -5,23 +5,12 @@ Require Import Arith.Bool_nat.
 Require Import AuxiliaryProofs.
 Require Import Bool.
 Require Import While.
+Require Import Usability.
 Import While.Language.
 Import While.Semantics.
 
-Module Test.
-Import While.CodeGeneration.
+Module Swap.
 Import Bool.
-
-Lemma step {SPEC} (R : WhileL) :
-  SPEC ⊑ R ->
-  (exists C, ((R ⊑ C) /\ isExecutable C)) ->
-  exists C, ((SPEC ⊑ C) /\ isExecutable C).
-Proof.
-  intros H1 H2.
-  inversion H2 as [w [H3 H4]].
-  exists w.
-  split; try apply (refineTrans R); assumption.
-Qed.
 
 Definition SWAP := Spec ([fun _ => True, fun s _ s' => varP s = varQ s' /\ varP s' = varQ s]).
 
@@ -47,18 +36,6 @@ Proof.
   split; reflexivity.
 Defined.
 
-Lemma stop : forall (w : WhileL),
-  isExecutable w ->
-  exists (C : WhileL), (w ⊑ C) /\ isExecutable C.
-Proof.
-  intros w; exists w; split; [apply refineRefl | assumption].
-Qed.
-
-Ltac stop :=  
-  match goal with  
-  | [ |- ex ?C ] => try apply stop; unfold isExecutable; try auto
-  end. 
-
 Lemma swapTest : 
   exists c, ((SWAP ⊑ c) /\ isExecutable c).
 Proof.
@@ -81,7 +58,7 @@ Proof.
   stop.
 Qed.
 
-End Test.
+End Swap.
 
 Module Definitions.
 
@@ -140,7 +117,6 @@ Module Proof.
 Import Definitions.
 Import While.CodeGeneration.
 Import Bool.
-Import Test.
 
 Ltac refine_post_pt pt1 pt2 := apply (Refinement _ _ (fun s (y : pre pt1 s) => y : pre pt2 s)). 
 
@@ -343,24 +319,6 @@ Proof.
   unfold W5b; apply refineSplitIf; [apply step6Then | apply step6Else]. 
 Qed.
 
-Lemma stepSeqSpec : forall (Pre Mid Post : Pow S),
-  (Spec ([Pre , (fun _ _ s' => Post s')]) ⊑ 
-    (Spec ([Pre , (fun _ _ s' => Mid s')])) ; (Spec ([Mid , (fun _ _ s' => Post s')]))) ->
-  (exists c, (Spec ([Pre , (fun _ _ s' => Mid s')]) ⊑ c)) ->
-  (exists c, (Spec ([Mid , (fun _ _ s' => Post s')]) ⊑ c)) ->
-  exists c, (Spec ([Pre , (fun _ _ s' => Post s')]) ⊑ c).
-Proof.
-  intros Pre Mid Post H1 H2 H3.
-  inversion H2 as [c' H4].
-  inversion H3 as [c'' H5].
-  exists (c' ; c'').
-  apply (refineTrans (Spec ([Pre, fun (s : S) (_ : Pre s) (s' : S) => Mid s']);
-         Spec ([Mid, fun (s : S) (_ : Mid s) (s' : S) => Post s']))).
-  assumption.
-  apply refineSplit; assumption.
-Qed.
-  
-
 Lemma resultTest : 
   exists c, ((WSPEC ⊑ c) /\ isExecutable c).
 Proof.
@@ -368,16 +326,62 @@ Proof.
   apply (step W1).
   apply step1.
   unfold W1.
-  Print W2.
-  apply (step W2).
+  apply stepSeqPT with (Mid := Inv).
   apply step2.
-  unfold W2.
-  apply (step (W3a ; W3b)).
-  apply step3.
-  unfold W3a,W3b,W3aa,W3ab.
+  apply (step (W3aa ; W3ab)).
+  unfold wrefines,semantics; simpl.
+  unfold Assign_PT,Seq_PT; simpl.
+  apply (refineTransPT PT3a).
+    unfold PT3a,Inv,square.
+    apply refineAssignPT.
+    simpl; intros; split; auto with arith.
 
-  
-Admitted.
+    unfold PT3a,Assign_PT.
+    apply refineSeqAssignPT.
+    intros; destruct s; simpl; reflexivity.
+  unfold W3aa,W3ab.
+  stop.
+  apply stepWhile with (cond := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))).
+    intros.
+    unfold Is_false in H.
+    remember (evalBExpr (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) s) as e.
+    destruct e.
+    inversion H.
+    unfold evalBExpr in Heqe.
+    simpl in Heqe.
+    destruct s as [N P Q R].
+    simpl in *.
+    unfold negb in *.
+    remember (match Q with
+              | 0 => false
+              | Datatypes.S m1 => beq_nat R m1
+              end) as e.
+    destruct e.
+    destruct Q as [|Q].
+    inversion Heqe0.
+    apply beq_nat_eq in Heqe0.
+    rewrite Heqe0; reflexivity.
+    inversion Heqe.
+
+  apply stepBody with 
+        (bodyR := (Spec ([fun X => 1 + varR X < varQ X /\ Inv X, 
+                          fun _ _ X => varR X < varP X < varQ X /\ Inv X])) ;
+                  (Spec ([fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X]))).
+  apply step4.
+  apply stepBody with
+        (bodyR := W5a ; W5b).
+  apply step5.
+  apply stepBody with
+        (bodyR := W5a ; If (Lt (Var N) (Mult (Var P) (Var P))) 
+                           (Q ::= (Var P)) (R ::= Var P)).
+  apply refineSplit; try apply refineRefl.
+  unfold W5b.
+  apply refineSplitIf.
+  apply step6Then.
+  apply step6Else.
+  unfold W5a.
+  stop.
+Qed.
 
 Lemma prgrmProof : isExecutable prgrm.
 Proof.  
