@@ -53,6 +53,33 @@ Proof.
   simpl; split; assumption.
 Qed.
 
+Lemma stepAssign (w : WhileL) (id : Identifier) (exp : Expr) 
+  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre ((setIdent id (evalExpr exp s)) s)) :
+  exists c, (w ⊑ c) /\ isExecutable c.
+Proof.
+  exists (Assign id exp).
+  split.
+  apply refineAssign; assumption.
+  simpl; trivial.
+Qed.
+
+Lemma stepFollowAssign (id : Identifier) (expr : Expr) (P : Pow S)
+(Q Q' : forall (s : S), P s -> Pow S) :
+  let w  := Spec ([P,Q]) in
+  let w' := Spec ([P,Q']) in
+  (forall s pres s', Q' s pres s' -> Q s pres (subst id expr s')) ->
+  (exists c, (w' ⊑ c) /\ isExecutable c) -> 
+  exists c, (w ⊑ c) /\ isExecutable c.
+Proof.
+  intros w w' HQ [c [H2 H3]].
+  apply refineFollowAssign in HQ.
+  apply (step (w' ; id ::= expr)).
+  assumption.
+  apply stepSplit; [ | stop].
+  exists c.
+  simpl; split; [assumption | trivial].
+Qed.
+
 Lemma stepSeqPT : forall (Pre Mid Post : Pow S),
   (Spec ([Pre , (fun _ _ s' => Post s')]) ⊑ 
     (Spec ([Pre , (fun _ _ s' => Mid s')])) ; (Spec ([Mid , (fun _ _ s' => Post s')]))) ->
@@ -135,19 +162,6 @@ Proof.
   exists c; split; assumption.
 Qed.
 
-Lemma stepWhile (inv : Pow S) (cond : BExpr) (Q : Pow S) : 
-  let pt := [inv , fun _ _ s' => inv s' /\ Q s'] in
-  let body := [fun s => inv s /\ Is_true (evalBExpr cond s), (fun _ _ s => inv s)] in
-  (forall s, Is_false (evalBExpr cond s) -> Q s) ->
-  (exists c, (While inv cond (Spec body) ⊑ c) /\ isExecutable c) ->
-  exists c, (Spec pt ⊑ c) /\ isExecutable c.
-Proof.
-  intros pt body H1 [c [H2 H3]].
-  apply (step (While inv cond (Spec body))).
-  apply refineWhile; assumption.
-  exists c; split; assumption.
-Qed.  
-
 Lemma stepBody (inv : Pow S) (cond : BExpr) (bodyL : WhileL) :
   (exists c, (bodyL ⊑ c) /\ isExecutable c) -> 
   exists c, (While inv cond bodyL ⊑ c) /\ isExecutable c.  
@@ -157,4 +171,18 @@ Proof.
   split.  
   apply refineBody with (inv := inv) (cond := cond) in H2; assumption.
   simpl; assumption.
+Qed.
+
+Lemma stepWhile (inv : Pow S) (cond : BExpr) (Q : Pow S) :
+  let pt := [inv , fun _ _ s' => inv s' /\ Q s'] in
+  let body := [fun s => inv s /\ Is_true (evalBExpr cond s), (fun _ _ s => inv s)] in
+  (forall s, Is_false (evalBExpr cond s) -> Q s) ->
+  (exists c, (Spec body ⊑ c) /\ isExecutable c) ->
+  exists c, (Spec pt ⊑ c) /\ isExecutable c.
+Proof.
+  intros pt body H1 [c [H2 H3]].
+  apply (step (While inv cond (Spec body))).
+  apply refineWhile; assumption.
+  apply stepBody.
+  exists c; split; assumption.
 Qed.

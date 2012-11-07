@@ -329,20 +329,16 @@ Proof.
   apply stepSeqPT with (Mid := Inv).
     apply step2.
   unfold Inv.
-  apply (step ((Spec ([fun _ => True,
-                       fun _ _ s' => (square (varR s') <= varN s' < square (1 + varN s'))]));
-               (Q ::= Plus (EConst 1) (Var N)))).
-    apply refineFollowAssign.
+  apply stepFollowAssign with 
+        (id := Q) (expr := Plus (EConst 1) (Var N))
+        (Q' := fun _ _ s' => (square (varR s') <= varN s' < square (1 + varN s'))).
     intros; destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl in *.
     assumption.
-  apply stepSplit; [ | stop].
-  apply (step (R ::= EConst 0)).
-    apply refineAssign.
+  apply stepAssign with (id := R) (exp := EConst 0).
     simpl.
     intros.
     unfold square; destruct s as [N P Q R]; simpl.
     split; auto with arith.
-    stop.
   apply stepWhile with (cond := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))).
     intros.
     unfold Is_false in H.
@@ -365,7 +361,6 @@ Proof.
     rewrite Heqe0; reflexivity.
     inversion Heqe.
 
-  apply stepBody.
   apply (step ((Spec ([fun X => 1 + varR X < varQ X /\ Inv X, 
                           fun _ _ X => varR X < varP X < varQ X /\ Inv X])) ;
                   (Spec ([fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X])))).
