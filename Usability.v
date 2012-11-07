@@ -7,7 +7,7 @@ Import While.Semantics.
 (* refineRefl equiv *)
 Lemma stop : forall (w : WhileL),
   isExecutable w ->
-  exists (C : WhileL), (w ⊑ C) /\ isExecutable C.
+  exists (c : WhileL), (w ⊑ c) /\ isExecutable c.
 Proof.
   intros w; exists w; split; [apply refineRefl | assumption].
 Qed.

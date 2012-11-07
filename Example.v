@@ -328,18 +328,21 @@ Proof.
   unfold W1.
   apply stepSeqPT with (Mid := Inv).
     apply step2.
-  apply (step (W3aa ; W3ab)). (* FIXME: use refineFollowAssign? *)
-    unfold wrefines,semantics; simpl.
-    unfold Assign_PT,Seq_PT; simpl.
-    apply (refineTransPT PT3a).
-      unfold PT3a,Inv,square.
-      apply refineAssignPT.
-      simpl; intros; split; auto with arith.
-
-      unfold PT3a,Assign_PT.
-      apply refineSeqAssignPT.
-      intros; destruct s; simpl; reflexivity.
-  unfold W3aa,W3ab; stop.
+  unfold Inv.
+  apply (step ((Spec ([fun _ => True,
+                       fun _ _ s' => (square (varR s') <= varN s' < square (1 + varN s'))]));
+               (Q ::= Plus (EConst 1) (Var N)))).
+    apply refineFollowAssign.
+    intros; destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl in *.
+    assumption.
+  apply stepSplit; [ | stop].
+  apply (step (R ::= EConst 0)).
+    apply refineAssign.
+    simpl.
+    intros.
+    unfold square; destruct s as [N P Q R]; simpl.
+    split; auto with arith.
+    stop.
   apply stepWhile with (cond := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))).
     intros.
     unfold Is_false in H.
