@@ -4,6 +4,7 @@ Require Import Bool.
 Import While.Language.
 Import While.Semantics.
 
+(* refineRefl equiv *)
 Lemma stop : forall (w : WhileL),
   isExecutable w ->
   exists (C : WhileL), (w ⊑ C) /\ isExecutable C.
@@ -16,6 +17,7 @@ Ltac stop :=
   | [ |- ex ?C ] => try apply stop; unfold isExecutable; try auto
   end. 
 
+(* refineTrans equiv *)
 Lemma step {SPEC} (R : WhileL) :
   SPEC ⊑ R ->
   (exists C, ((R ⊑ C) /\ isExecutable C)) ->
@@ -27,6 +29,30 @@ Proof.
   split; try apply (refineTrans R); assumption.
 Qed.
 
+Lemma stepSplit (w1 w2 : WhileL) :
+  (exists c, (w1 ⊑ c) /\ isExecutable c) ->
+  (exists c, (w2 ⊑ c) /\ isExecutable c) ->
+  exists c, ((w1 ; w2) ⊑ c) /\ isExecutable c.
+Proof.
+  intros [c1 [H1 H2]] [c2 [H3 H4]].
+  exists (c1 ; c2).
+  split.
+  apply refineSplit; assumption.
+  simpl; split; assumption.
+Qed. 
+
+Lemma stepSplitIf (w1 w2 : WhileL) (cond : BExpr) :
+  (exists c, (w1 ⊑ c) /\ isExecutable c) -> 
+  (exists c, (w2 ⊑ c) /\ isExecutable c) ->
+  exists c, (If cond w1 w2 ⊑ c) /\ isExecutable c.
+Proof.
+  intros [c1 [H1 H2]] [c2 [H3 H4]].
+  exists (If cond c1 c2).
+  split.
+  apply refineSplitIf; assumption.
+  simpl; split; assumption.
+Qed.
+
 Lemma stepSeqPT : forall (Pre Mid Post : Pow S),
   (Spec ([Pre , (fun _ _ s' => Post s')]) ⊑ 
     (Spec ([Pre , (fun _ _ s' => Mid s')])) ; (Spec ([Mid , (fun _ _ s' => Post s')]))) ->
@@ -34,14 +60,12 @@ Lemma stepSeqPT : forall (Pre Mid Post : Pow S),
   (exists c, (Spec ([Mid , (fun _ _ s' => Post s')]) ⊑ c) /\ isExecutable c) ->
   exists c, (Spec ([Pre , (fun _ _ s' => Post s')]) ⊑ c) /\ isExecutable c.
 Proof.
-  intros Pre Mid Post H1 H2 H3.
-  inversion H2 as [c'  [H4 H5]].
-  inversion H3 as [c'' [H6 H7]].
-  exists (c' ; c'').
-  split.
-  apply (refineTrans (Spec ([Pre, fun (s : S) (_ : Pre s) (s' : S) => Mid s']);
-         Spec ([Mid, fun (s : S) (_ : Mid s) (s' : S) => Post s']))).
+  intros Pre Mid Post H1 [c1 [H2 H3]] [c2 [H4 H5]].
+  apply (step (Spec ([Pre, fun (s : S) (_ : Pre s) (s' : S) => Mid s']);
+               Spec ([Mid, fun (s : S) (_ : Mid s) (s' : S) => Post s']))).
   assumption.
+  exists (c1 ; c2).
+  split.
   apply refineSplit; assumption.
   simpl; split; assumption.
 Qed.
@@ -58,27 +82,30 @@ Lemma refineIfPT (P : Pow S) (Q : forall s, P s -> Pow S)
   pt ⊏ If_PT cond Then Else.  
 Proof.
   intros pt Then Else H1 H2.
-  assert (d : pre pt ⊂ pre (If_PT cond Then Else)).
-  unfold pre,semantics,subset; simpl.  
-  intros.
-  split.
-  intros H3.
-  apply H1 in H3.
-  inversion H3 as [H4 H5]; simpl in H4.
-  apply H4 in H; assumption.
-  intros H3.
-  apply H2 in H3.
-  inversion H3 as [H4 H5]; simpl in H4.
-  apply H4 in H; assumption.
-(*
-  unfold subset in d; simpl in d.
-  unfold pt,Then in H1. simpl in H1.
-*)
+  set (d := (fun (s : S) (H : P s) => ((fun HT => match H1 s HT with
+                                                  | Refinement Pre _ => Pre s H
+                                                  end), 
+                                       (fun HF => match H2 s HF with
+                                                  | Refinement Pre _ => Pre s H
+                                                  end))) 
+             : pre pt ⊂ pre (If_PT cond Then Else)).
   apply (Refinement _ _ d).
   intros.
-  unfold subset; intros s' Post.
+  unfold subset.
   simpl.
-  simpl in Post.
+  intros s' [PT PF].
+  assert (Ha: forall b, Is_true b \/ Is_false b).
+  intros; unfold Is_true,Is_false.
+  destruct b; [left | right]; trivial.
+  assert (H3: Is_true (cond s) \/ Is_false (cond s)).
+  apply Ha.
+  inversion H3 as [H4 | H4].
+  apply H1 in H4.
+  unfold pt,Then in H4.
+  inversion H4 as [Pre Post].
+  simpl in Pre,Post.
+  unfold subset in Post.
+  apply Post. 
 Admitted.  
 
 Lemma refineIf (P : Pow S) (Q : forall s, P s -> Pow S) (cond : BExpr) (WThen WElse : WhileL) :
@@ -103,12 +130,9 @@ Lemma stepIf (P : Pow S) (Q : forall s, P s -> Pow S) (cond : BExpr) (WThen WEls
   exists c, (pt ⊑ c) /\ isExecutable c.
 Proof.
   intros pt H1 H2 [c [H3 H4]].
-  exists c.
-  split.
-  apply (refineTrans (If cond WThen WElse)).
+  apply (step (If cond WThen WElse)).
   apply refineIf; unfold pt in *; assumption.
-  assumption.
-  assumption.
+  exists c; split; assumption.
 Qed.
 
 Lemma stepWhile (inv : Pow S) (cond : BExpr) (Q : Pow S) : 
@@ -119,26 +143,18 @@ Lemma stepWhile (inv : Pow S) (cond : BExpr) (Q : Pow S) :
   exists c, (Spec pt ⊑ c) /\ isExecutable c.
 Proof.
   intros pt body H1 [c [H2 H3]].
-  exists c.
-  split.
-  apply (refineTrans (While inv cond (Spec body))).
-  unfold wrefines,semantics.
-  apply refineWhile.
-  apply H1.
-  assumption.
-  assumption.
+  apply (step (While inv cond (Spec body))).
+  apply refineWhile; assumption.
+  exists c; split; assumption.
 Qed.  
 
-Lemma stepBody (inv : Pow S) (cond : BExpr) (bodyL bodyR : WhileL) :
-  bodyL ⊑ bodyR ->
-  (exists c, (While inv cond bodyR ⊑ c) /\ isExecutable c) ->
-  exists c, (While inv cond bodyL ⊑ c) /\ isExecutable c.
+Lemma stepBody (inv : Pow S) (cond : BExpr) (bodyL : WhileL) :
+  (exists c, (bodyL ⊑ c) /\ isExecutable c) -> 
+  exists c, (While inv cond bodyL ⊑ c) /\ isExecutable c.  
 Proof.
-  intros H1 [c [H2 H3]].
-  exists c.
-  split.
-  apply (refineTrans (While inv cond bodyR)).
-  apply refineBody; assumption.
-  assumption.
-  assumption.
+  intros [c [H2 H3]].
+  exists (While inv cond c).
+  split.  
+  apply refineBody with (inv := inv) (cond := cond) in H2; assumption.
+  simpl; assumption.
 Qed.

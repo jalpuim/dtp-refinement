@@ -327,20 +327,19 @@ Proof.
   apply step1.
   unfold W1.
   apply stepSeqPT with (Mid := Inv).
-  apply step2.
-  apply (step (W3aa ; W3ab)).
-  unfold wrefines,semantics; simpl.
-  unfold Assign_PT,Seq_PT; simpl.
-  apply (refineTransPT PT3a).
-    unfold PT3a,Inv,square.
-    apply refineAssignPT.
-    simpl; intros; split; auto with arith.
+    apply step2.
+  apply (step (W3aa ; W3ab)). (* FIXME: use refineFollowAssign? *)
+    unfold wrefines,semantics; simpl.
+    unfold Assign_PT,Seq_PT; simpl.
+    apply (refineTransPT PT3a).
+      unfold PT3a,Inv,square.
+      apply refineAssignPT.
+      simpl; intros; split; auto with arith.
 
-    unfold PT3a,Assign_PT.
-    apply refineSeqAssignPT.
-    intros; destruct s; simpl; reflexivity.
-  unfold W3aa,W3ab.
-  stop.
+      unfold PT3a,Assign_PT.
+      apply refineSeqAssignPT.
+      intros; destruct s; simpl; reflexivity.
+  unfold W3aa,W3ab; stop.
   apply stepWhile with (cond := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))).
     intros.
     unfold Is_false in H.
@@ -363,23 +362,21 @@ Proof.
     rewrite Heqe0; reflexivity.
     inversion Heqe.
 
-  apply stepBody with 
-        (bodyR := (Spec ([fun X => 1 + varR X < varQ X /\ Inv X, 
+  apply stepBody.
+  apply (step ((Spec ([fun X => 1 + varR X < varQ X /\ Inv X, 
                           fun _ _ X => varR X < varP X < varQ X /\ Inv X])) ;
-                  (Spec ([fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X]))).
+                  (Spec ([fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X])))).
   apply step4.
-  apply stepBody with
-        (bodyR := W5a ; W5b).
+  apply (step (W5a ; W5b)). (* FIXME: for now, no stepSplit here due to big proof in step5 *)
   apply step5.
-  apply stepBody with
-        (bodyR := W5a ; If (Lt (Var N) (Mult (Var P) (Var P))) 
-                           (Q ::= (Var P)) (R ::= Var P)).
-  apply refineSplit; try apply refineRefl.
-  unfold W5b.
-  apply refineSplitIf.
+  apply stepSplit.
+  unfold W5a; stop.
+  apply stepSplitIf.
+  apply (step (Q ::= Var P)).
   apply step6Then.
+  stop.
+  apply (step (R ::= Var P)).
   apply step6Else.
-  unfold W5a.
   stop.
 Qed.
 
