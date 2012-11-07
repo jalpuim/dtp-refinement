@@ -39,23 +39,14 @@ Defined.
 Lemma swapTest : 
   exists c, ((SWAP ⊑ c) /\ isExecutable c).
 Proof.
-  apply (step (Spec ([fun _ => True , fun s _ s' => varP s = varQ s' /\ varN s' = varQ s]) ; 
-           P ::= Var N)).  
-  apply refineFollowAssign.
+  apply stepFollowAssign with (id := P) (expr := Var N)
+                              (Q' := fun s _ s' => varP s = varQ s' /\ varN s' = varQ s).
+  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.  
+  apply stepFollowAssign with (id := Q) (expr := Var P)
+                              (Q' := fun s _ s' => varP s = varP s' /\ varN s' = varQ s).
   destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
-  apply (step ((Spec ([fun _ => True , fun s _ s' => varP s = varP s' /\ varN s' = varQ s]) ;
-            Q ::= Var P); P ::= Var N)).
-  apply refineSplit; try apply refineRefl.
-  apply refineFollowAssign.
-  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
-  apply (step (((N ::= Var Q) ; Q ::= Var P); 
-                 P ::= Var N)).
-  repeat apply refineSplit; try apply refineRefl.
-  apply refineAssign.
-  simpl; intros.
-  destruct s as [N P Q R]; simpl.
-  split; reflexivity.
-  stop.
+  apply stepAssign with (id := N) (exp := Var Q).
+  simpl; intros; destruct s as [N P Q R]; simpl; split; reflexivity.
 Qed.
 
 End Swap.
@@ -342,8 +333,7 @@ Proof.
   apply stepWhile with (cond := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))).
     intros.
     unfold Is_false in H.
-    remember (evalBExpr (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) s) as e.
-    destruct e.
+    remember (evalBExpr (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) s) as e; destruct e.
     inversion H.
     unfold evalBExpr in Heqe.
     simpl in Heqe.
@@ -353,8 +343,7 @@ Proof.
     remember (match Q with
               | 0 => false
               | Datatypes.S m1 => beq_nat R m1
-              end) as e.
-    destruct e.
+              end) as e; destruct e.
     destruct Q as [|Q].
     inversion Heqe0.
     apply beq_nat_eq in Heqe0.
@@ -367,15 +356,9 @@ Proof.
   apply step4.
   apply (step (W5a ; W5b)). (* FIXME: for now, no stepSplit here due to big proof in step5 *)
   apply step5.
-  apply stepSplit.
-  unfold W5a; stop.
-  apply stepSplitIf.
-  apply (step (Q ::= Var P)).
-  apply step6Then.
-  stop.
-  apply (step (R ::= Var P)).
-  apply step6Else.
-  stop.
+  apply stepSplit; [ unfold W5a; stop | apply stepSplitIf ].
+  apply (step (Q ::= Var P)); [ apply step6Then | stop ].
+  apply (step (R ::= Var P)); [ apply step6Else | stop ].
 Qed.
 
 Lemma prgrmProof : isExecutable prgrm.
