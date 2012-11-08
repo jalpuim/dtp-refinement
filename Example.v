@@ -37,7 +37,7 @@ Proof.
 Defined.
 
 Lemma swapTest : 
-  exists c, ((SWAP ⊑ c) /\ isExecutable c).
+  { c : WhileL | ((SWAP ⊑ c) /\ isExecutable c)}.
 Proof.
   apply stepFollowAssign with (id := P) (expr := Var N)
                               (Q' := fun s _ s' => varP s = varQ s' /\ varN s' = varQ s).
@@ -47,7 +47,13 @@ Proof.
   destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
   apply stepAssign with (id := N) (exp := Var Q).
   simpl; intros; destruct s as [N P Q R]; simpl; split; reflexivity.
-Qed.
+Defined.
+
+Definition foo : WhileL :=  proj1_sig swapTest.
+
+Print foo.
+Compute foo.
+Compute swapTest.
 
 End Swap.
 
