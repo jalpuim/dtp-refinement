@@ -49,12 +49,6 @@ Proof.
   simpl; intros; destruct s as [N P Q R]; simpl; split; reflexivity.
 Defined.
 
-Definition foo : WhileL :=  proj1_sig swapTest.
-
-Print foo.
-Compute foo.
-Compute swapTest.
-
 End Swap.
 
 Module Definitions.
@@ -317,7 +311,7 @@ Proof.
 Qed.
 
 Lemma resultTest : 
-  exists c, ((WSPEC ⊑ c) /\ isExecutable c).
+  { c : WhileL | (WSPEC ⊑ c) /\ isExecutable c }.
 Proof.
   unfold WSPEC.
   apply (step W1).
@@ -365,12 +359,16 @@ Proof.
   apply stepSplit; [ unfold W5a; stop | apply stepSplitIf ].
   apply (step (Q ::= Var P)); [ apply step6Then | stop ].
   apply (step (R ::= Var P)); [ apply step6Else | stop ].
-Qed.
+Defined.
 
 Lemma prgrmProof : isExecutable prgrm.
 Proof.  
   unfold prgrm,isExecutable; simpl; auto.
 Qed.
+
+Definition foo : WhileL := proj1_sig resultTest.
+
+Compute foo.
 
 (*
 Require Import String.
@@ -379,9 +377,8 @@ Compute (whileToCode prgrm prgrmProof).
 
 (*
 Extraction Language Haskell.
-Extraction "Program.hs" prgrm.
+Extraction "Program.hs" foo W1.
 *)
-
 
 End Proof.
 

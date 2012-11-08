@@ -234,7 +234,7 @@ Proof.
   intros.
 Admitted.
 
-Lemma refineIfPT (cond : S -> bool) (pt : PT) :
+Lemma refineIfSpec (cond : S -> bool) (pt : PT) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
   let thenBranch := [branchPre (fun s => Is_true (cond s)),
                      fun s pre s' => post pt s (fst pre) s' ] in
@@ -242,7 +242,49 @@ Lemma refineIfPT (cond : S -> bool) (pt : PT) :
                      fun s pre s' => post pt s (fst pre) s' ] in
   (Spec pt) ⊑ Spec (If_PT cond thenBranch elseBranch).
 Proof.
-  unfold "⊑",semantics; apply refineIfPT.
+  unfold "⊑",semantics; apply refineIfPT'.
+Qed.
+
+Lemma refineIf (P : Pow S) (Q : forall s, P s -> Pow S) (cond : BExpr) (WThen WElse : WhileL) :
+  let pt := Spec ([P,Q]) in
+  (forall s, Is_true (evalBExpr cond s) -> pt ⊑ WThen) ->
+  (forall s, Is_false (evalBExpr cond s) -> pt ⊑ WElse) ->
+  pt ⊑ If cond WThen WElse.
+Proof.
+  intros pt H1 H2.
+  apply refineIfPT.
+  intros.
+  apply H1 in H.
+  unfold wrefines,semantics in H; simpl in *.
+  destruct ((fix semantics (w : WhileL) : PT :=
+             match w with
+             | Skip => Skip_PT
+             | id ::= exp =>
+                 Assign_PT (fun s0 : S => setIdent id (evalExpr exp s0) s0)
+             | st1; st2 => semantics st1;; semantics st2
+             | If c t e =>
+                 If_PT (fun s0 : S => evalBExpr c s0)
+                   (semantics t) (semantics e)
+             | While inv c b =>
+                 While_PT inv (fun s0 : S => evalBExpr c s0) (semantics b)
+             | Spec pt0 => pt0
+             end) WThen); assumption.
+  intros.
+  apply H2 in H.
+  unfold wrefines,semantics in H; simpl in *.
+  destruct ((fix semantics (w : WhileL) : PT :=
+            match w with
+            | Skip => Skip_PT
+            | id ::= exp =>
+                Assign_PT (fun s0 : S => setIdent id (evalExpr exp s0) s0)
+            | st1; st2 => semantics st1;; semantics st2
+            | If c t e =>
+                If_PT (fun s0 : S => evalBExpr c s0)
+                  (semantics t) (semantics e)
+            | While inv c b =>
+                While_PT inv (fun s0 : S => evalBExpr c s0) (semantics b)
+            | Spec pt0 => pt0
+            end) WElse); assumption.
 Qed.
 
 Lemma refineWhile (inv : Pow S) (cond : S -> bool) (Q : Pow S) 

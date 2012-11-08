@@ -204,7 +204,7 @@ Definition If_PT (cond : S -> bool) (Then Else : PT) : PT :=
   [ ifPre , ifPost ].
 
 (* Law 5.1 *)
-Lemma refineIfPT (cond : S -> bool) (pt : PT) :
+Lemma refineIfPT' (cond : S -> bool) (pt : PT) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
   let thenBranch := [branchPre (fun s => Is_true (cond s)),
                      fun s pre s' => post pt s (fst pre) s' ] in
@@ -240,6 +240,61 @@ Lemma IfExtendR (cond : S -> bool) (thenPt elsePt : PT) (U : Pow S) (s : S) :
     intros; apply (projT2 (H1 I)); destruct H as [A _]; apply A.
     intros; apply (projT2 (H2 I)); destruct H as [_ A]; apply A.
   Qed.
+
+(* Alternative (but default) refineIfPT *)
+Lemma refineIfPT (P : Pow S) (Q : forall s, P s -> Pow S)
+                 (PThen : Pow S) (QThen : forall s, PThen s -> Pow S)
+                 (PElse : Pow S) (QElse : forall s, PElse s -> Pow S) 
+                 (cond : S -> bool) :
+  let pt := ([P,Q]) in
+  let Then := ([PThen,QThen]) in
+  let Else := ([PElse,QElse]) in
+  (forall s, Is_true (cond s) -> pt ⊏ Then) ->
+  (forall s, Is_false (cond s) -> pt ⊏ Else) ->
+  pt ⊏ If_PT cond Then Else.  
+Proof.
+  intros pt Then Else H1 H2.
+  set (d := (fun (s : S) (H : P s) => ((fun HT => match H1 s HT with
+                                                  | Refinement Pre _ => Pre s H
+                                                  end), 
+                                       (fun HF => match H2 s HF with
+                                                  | Refinement Pre _ => Pre s H
+                                                  end))) 
+             : pre pt ⊂ pre (If_PT cond Then Else)).
+  apply (Refinement _ _ d).
+  intros.
+  unfold subset.
+  simpl.
+  intros s' [PT PF].
+  assert (Ha: forall b, Is_true b \/ Is_false b).
+  intros; unfold Is_true,Is_false.
+  destruct b; [left | right]; trivial.
+  assert (H3: Is_true (cond s) \/ Is_false (cond s)).
+  apply Ha.
+  clear Ha.
+  destruct H3 as [CondTrue | CondFalse].
+  remember (H1 s CondTrue) as Z. 
+  destruct Z as [A B].
+  unfold pt in *; simpl in *.
+  apply B.
+  assert (QThen s match H1 s CondTrue with
+               | Refinement Pre _ => Pre s x
+               end s').
+  apply PT; assumption.
+  rewrite <- HeqZ in H.
+  exact H.
+
+  remember (H2 s CondFalse) as Z. 
+  destruct Z as [A B].
+  unfold pt in *; simpl in *.
+  apply B.
+  assert (QElse s match H2 s CondFalse with
+               | Refinement Pre _ => Pre s x
+               end s').
+  apply PF; assumption.
+  rewrite <- HeqZ in H.
+  exact H.
+Qed.
 
 Definition While_PT (inv : Pow S) (cond : S -> bool) (body : PT) : PT :=
   let whilePre := (fun s =>   (* The invariant should hold initially *)
@@ -364,7 +419,7 @@ Proof.
 Qed.
 
 
-Lemma refineIfPT' (cond : S -> bool) (pt : PT) (PThen PElse : Pow S) :
+Lemma refineIfPT'' (cond : S -> bool) (pt : PT) (PThen PElse : Pow S) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
   let thenBranch := [branchPre PThen
                     , fun s pre s' => post pt s (fst pre) s' ] in

@@ -2,6 +2,9 @@ module CodeGen (toCode
                , WhileL (..)
                , Expr (..)
                , BExpr (..)
+               , Identifier (..)
+               , Nat (..)
+               , PT (..)
                , sqrtPrgrm) where
 
 import CodeGen.AG
