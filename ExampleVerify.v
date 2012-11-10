@@ -135,7 +135,6 @@ Proof.
   apply refineSeqAssignPT.
   intros; destruct s; simpl; reflexivity.
   (* Part b *)
-     unfold WBody,evalBExpr,evalExpr.
      apply refineWhile.
      intros.
      destruct s as [N P Q R]; simpl in *.

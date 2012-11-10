@@ -234,22 +234,22 @@ Proof.
   intros.
 Admitted.
 
-Lemma refineIf (cond : S -> bool) (pt : PT) :
+Lemma refineIf (cond : BExpr) (pt : PT) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
-  let thenBranch := [branchPre (fun s => Is_true (cond s)),
+  let thenBranch := [branchPre (fun s => Is_true (evalBExpr cond s)),
                      fun s pre s' => post pt s (fst pre) s' ] in
-  let elseBranch := [branchPre (fun s => Is_false (cond s)),
+  let elseBranch := [branchPre (fun s => Is_false (evalBExpr cond s)),
                      fun s pre s' => post pt s (fst pre) s' ] in
-  (Spec pt) ⊑ Spec (If_PT cond thenBranch elseBranch).
+  (Spec pt) ⊑ If cond (Spec thenBranch) (Spec elseBranch).
 Proof.
   unfold "⊑",semantics; apply refineIfPT.
 Qed.
 
-Lemma refineWhile (inv : Pow S) (cond : S -> bool) (Q : Pow S) 
-  (StrQ : forall s, Is_false (cond s) -> Q s) : 
+Lemma refineWhile (inv : Pow S) (cond : BExpr) (Q : Pow S) 
+  (StrQ : forall s, Is_false (evalBExpr cond s) -> Q s) : 
   let w := Spec ([inv , fun _ _ s' => inv s' /\ Q s']) in
-  let body := [fun s => inv s /\ Is_true (cond s), (fun _ _ s => inv s)] in
-  w ⊑ Spec (While_PT inv cond body).
+  let body := [fun s => inv s /\ Is_true (evalBExpr cond s), (fun _ _ s => inv s)] in
+  w ⊑ While inv cond (Spec body).
   Proof.
     unfold "⊑",semantics; now (apply refineWhilePT).
 Qed.
