@@ -178,7 +178,6 @@ Qed.
 Definition subst (id : Identifier) (exp : Expr) (s : S) : S := 
    setIdent id (evalExpr exp s) s.
 
-(* TODO: Finish this *)
 Lemma refineFollowAssign (id : Identifier) (exp : Expr) (P : Pow S) 
 (Q Q' : forall (s : S), P s -> Pow S) :
   let w  := Spec ([P,Q]) in
@@ -187,16 +186,17 @@ Lemma refineFollowAssign (id : Identifier) (exp : Expr) (P : Pow S)
   w ⊑ (w' ; id ::= exp).
 Proof.
   intros w w' HQ.
-  assert (d: pre (semantics w) ⊂ pre (semantics (w' ; id ::= exp))).
-  unfold subset; simpl; intros. 
-  exists H; intros; trivial. 
-  apply (Refinement _ _ d).  
+  set (d := (fun (s : S) (H : P s) => 
+              (exist (fun a => forall t : S, Q' s a t -> True) H (fun _ _ => I))) : 
+         pre (semantics w) ⊂ pre (semantics (w' ; id ::= exp))).
+  apply (Refinement _ _ d).
   unfold subset; simpl; intros.
   inversion H as [s' H1].
   inversion H1 as [H2 H3].
   rewrite H3.
   apply HQ.  
-Admitted.
+  assumption.
+Qed.
 
 Lemma refineSeq (Pre Mid Post : Pow S) :
   let w := Spec ([ Pre , fun _ _ s' => Post s' ]) in
@@ -209,28 +209,6 @@ Qed.
 Lemma refineSeqAssocR : forall (w w1 w2 w3 : WhileL),
   (w ⊑ (w1 ; w2) ; w3) -> (w ⊑ w1 ; w2 ; w3).
 Proof.
-  intros w w1.
-  unfold wrefines.
-  simpl.
-  induction w1.
-  destruct w2.
-  simpl.
-  unfold Skip_PT, Seq_PT.
-  simpl.
-  intros.
-Admitted.
-
-(* TODO: Finish this *)
-Lemma seqAssoc : forall (w1 w2 w3 : WhileL),
-  semantics (w1 ; w2 ; w3) = semantics ((w1 ; w2) ; w3).
-Proof.
-  intros w1.
-  induction w1.
-  simpl.
-  destruct w2.
-  simpl.
-  unfold Skip_PT,Seq_PT.
-  simpl.
   intros.
 Admitted.
 

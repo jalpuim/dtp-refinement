@@ -160,6 +160,26 @@ Proof.
   intros; inversion H0; inversion H1; rewrite H.
   rewrite <- x1; rewrite <- H2; reflexivity.
 Qed.
+
+(* TODO: Finish this *)
+Lemma refineSeqAssoc_PT : forall (pt1 pt2 pt3 : PT),
+  ((pt1 ;; pt2) ;; pt3) ⊏ (pt1 ;; pt2 ;; pt3).
+Proof.
+  intros.  
+  assert (d: pre ((pt1 ;; pt2) ;; pt3) ⊂ pre (pt1;; pt2;; pt3)).
+  unfold subset; simpl; intros.
+  destruct H as [[H1 H2] H3].
+  exists H1.
+  intros.
+  simpl in H3.
+  assert (H': post pt1 s H1 t) by (apply H).
+  apply H2 in H.
+  exists H.
+  intros u H4.
+  apply H3.
+  exists t.
+  exists H'.
+Admitted.
   
 Lemma seqExtendL (pt1 pt2 : PT) (U : Pow S) (s : S) : 
   extend pt1 (extend pt2 U) s -> extend (Seq_PT pt1 pt2) U s.
