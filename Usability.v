@@ -105,15 +105,17 @@ Lemma stepIf (cond : BExpr) (pt : PT) :
                            fun s pre s' => post pt s (fst pre) s' ]) in
   let elseBranch := Spec ([branchPre (fun s => Is_false (evalBExpr cond s)),
                            fun s pre s' => post pt s (fst pre) s' ]) in
-  { c : WhileL | (If cond thenBranch elseBranch ⊑ c) /\ isExecutable c } ->
+  { c : WhileL | (thenBranch ⊑ c) /\ isExecutable c } ->
+  { c : WhileL | (elseBranch ⊑ c) /\ isExecutable c } ->
   { c : WhileL | (Spec pt ⊑ c) /\ isExecutable c }.
 Proof.
-  intros branchPre thenBranch elseBranch [c [H1 H2]].
-  exists c.
-  split; [ | assumption ].
+  intros branchPre thenBranch elseBranch [cThen [H1 H2]] [cElse [H3 H4]].
+  exists (If cond cThen cElse).
+  split.
   apply (refineTrans (If cond thenBranch elseBranch)).
   apply refineIf.
-  apply H1.
+  apply refineSplitIf; assumption.
+  simpl; split; assumption.
 Defined.
 
 Lemma stepBody {inv cond bodyL} :
@@ -153,21 +155,7 @@ Proof.
   apply strengthenPost; assumption.
 Defined.
 
-Lemma stepWeakenPre {P1} (P2 : Pow S) {Q} (f : P1 ⊂ P2) (Q' : forall s : S, P1 s -> Pow S) :
-  (forall s p, Q s (f s p) ⊂ Q' s p) -> 
-  { c : WhileL | (Spec ([ P2 , Q ]) ⊑ c) /\ isExecutable c } ->
-  { c : WhileL | (Spec ([ P1 , Q' ]) ⊑ c) /\ 
-                 isExecutable c }.
-Proof.
-  intros H1 [c [H2 H3]].
-  exists c.
-  split; [ | assumption ].
-  apply (refineTrans (Spec ([ P2 , Q ]))); [ | assumption].
-  apply weakenPre with (f := f); assumption.
-Defined.
-
-
-Lemma stepWeakenPre' {P1} (P2 : Pow S) {Q} (f : P1 ⊂ P2) :
+Lemma stepWeakenPre {P1} {P2 : Pow S} (Q : forall (s : S), P2 s -> Pow S) (f : P1 ⊂ P2) :
   { c : WhileL | (Spec ([ P2 , Q ]) ⊑ c) /\ isExecutable c } ->
   { c : WhileL | (Spec ([ P1 , (fun s p s' => Q s (f s p) s') ]) ⊑ c) /\ 
                  isExecutable c }.
@@ -176,19 +164,5 @@ Proof.
   exists c.
   split; [ | assumption ].
   apply (refineTrans (Spec ([ P2 , Q ]))); [ | assumption].
-  apply weakenPre'; assumption.
-Defined.
-
-Lemma stepWeakenPre'' {P1} (P2 : Pow S) {Q1} (Q2 : forall s, P2 s -> Pow S) (f : P1 ⊂ P2) :
-  (forall (s s' : S) p1 p2, Q1 s p1 s' = Q2 s p2 s') ->
-  { c : WhileL | (Spec ([ P2 , Q2 ]) ⊑ c) /\ 
-                 isExecutable c } ->
-  { c : WhileL | (Spec ([ P1 , Q1 ]) ⊑ c) /\ 
-                 isExecutable c }.
-Proof.
-  intros H1 [c [H2 H3]].
-  exists c.
-  split; [ | assumption ].
-  apply (refineTrans (Spec ([ P2 , Q2 ]))); [ | assumption].
-  apply weakenPre''; assumption.
+  apply weakenPre; assumption.
 Defined.

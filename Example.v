@@ -152,9 +152,9 @@ Definition ElseSpec :=
                                                                    end)))) (s' : S) => Inv s']).
 
 
-Lemma w5bThenProof : ThenPT ⊑ W5bThen.
+Lemma w5bThenProof : ThenSpec ⊑ W5bThen.
 Proof.
-    assert (d: pre (semantics ThenPT) ⊂ pre (semantics (W5bThen))).
+    assert (d: pre (semantics ThenSpec) ⊂ pre (semantics (W5bThen))).
     unfold subset,semantics,Inv; simpl; intros [N P Q R] [[[H1 H2] [H3 H4]] H]; simpl in *.
     unfold Is_true in H; unfold Inv; simpl.
     split.
@@ -171,9 +171,9 @@ Proof.
     assumption.
 Qed.
 
-Lemma w5bElseProof : ElsePT ⊑ W5bElse.
+Lemma w5bElseProof : ElseSpec ⊑ W5bElse.
 Proof.
-  assert (d: pre (semantics ElsePT) ⊂ pre (semantics (W5bElse))).
+  assert (d: pre (semantics ElseSpec) ⊂ pre (semantics (W5bElse))).
       unfold subset,semantics,Inv; simpl; intros [N P Q R] [[[H1 H2] [H3 H4]] H]; simpl in *.
       unfold Is_false in H; unfold Inv; simpl in *.
       unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
@@ -204,29 +204,21 @@ Proof.
     unfold square; intros; destruct s as [N P Q R]; simpl in *.
     split; auto with arith.
   apply stepWhile with (cond := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))).
-    apply stepWhileProof.
-(*
-  apply stepWeakenPre with (P2 := (fun s : S => 1 + varR s < varQ s /\ Inv s)) 
-                           (f := weakenPreProof)
+    apply stepWhileProof. 
+  apply stepWeakenPre with (f := weakenPreProof)
                            (Q := fun (s : S) (_ : 1 + varR s < varQ s /\ Inv s)
-                           (s0 : S) => Inv s0); unfold subset; auto.
-*)
-  apply stepWeakenPre'' with (Q2 := fun (s : S) (_ : 1 + varR s < varQ s /\ Inv s)
-                                        (s' : S) => Inv s')
-                             (P2 := (fun s : S => 1 + varR s < varQ s /\ Inv s));
-    [ apply weakenPreProof | intros; reflexivity | ].
+                                     (s' : S) => Inv s').
   apply stepSeqPT with (Mid := (fun X => varR X < varP X < varQ X /\ Inv X)).
     apply seqPTProof.
   apply stepAssign with (id := P) (exp := Div2 (Plus (Var Q) (Var R))). 
     unfold subset,Inv; simpl; destruct s as [N P Q R]; simpl in *.
     apply assignProof. 
   apply stepIf with (cond := Lt (Var N) (Mult (Var P) (Var P))).
-  apply stepSplitIf.
   apply (step W5bThen); simpl.
     apply w5bThenProof.
   apply stepAssign with (id := Q) (exp := Var P).
     unfold W5bThen,Inv; simpl; intros s [H1 [H2 [H3 H4]]].
-    destruct s as [N P Q R]; simpl in *; split; assumption.    
+    destruct s as [N P Q R]; simpl in *; split; assumption.
   apply (step W5bElse); simpl.
     apply w5bElseProof.
   apply stepAssign with (id := R) (exp := Var P).
@@ -247,9 +239,13 @@ Proof.
   simpl; intros; destruct s as [N P Q R]; simpl; split; reflexivity.
 Defined.
 
-Definition sqrtprgrm : WhileL := proj1_sig resultSqrt.
+Definition sqrtCode : WhileL := proj1_sig resultSqrt.
+Definition swapCode : WhileL := proj1_sig resultSwap.
 
-Compute sqrtprgrm.
+(*
+Compute sqrtCode.
+Compute swapCode.
+*)
 
 (*
 Extraction Language Haskell.

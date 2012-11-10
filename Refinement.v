@@ -61,34 +61,12 @@ Proof.
   simpl in *; assumption.
 Qed.
 
-Lemma weakenPre (P1 P2 : Pow S) (Q' : forall s : S, P1 s -> Pow S) 
-(Q : forall s, P2 s -> Pow S) (f : P1 ⊂ P2) :
-  (forall s p, Q s (f s p) ⊂ Q' s p) -> 
-  [ P1 , Q' ] ⊏ [ P2 , Q ].
-Proof.
-  intros.
-  apply (Refinement ([P1 , Q']) ([P2 , Q]) f).
-  unfold post,subset; simpl; intros.
-  apply H; assumption.
-Qed.
-
-Lemma weakenPre' (P1 P2 : Pow S) (Q : forall s, P2 s -> Pow S) (f : P1 ⊂ P2) :
+Lemma weakenPre (P1 P2 : Pow S) (Q : forall s, P2 s -> Pow S) (f : P1 ⊂ P2) :
   [ P1 , (fun s p s' => Q s (f s p) s') ] ⊏ [ P2 , Q ].
 Proof.
   intros.
   apply (Refinement ([P1, fun (s : S) (p : P1 s) (s' : S) => Q s (f s p) s']) ([P2, Q]) f).
   unfold post,subset; intros; trivial.
-Qed.
-
-Lemma weakenPre'' (P1 P2 : Pow S) (Q1 : forall s : S, P1 s -> Pow S) 
-(Q2 : forall s : S, P2 s -> Pow S) (f : P1 ⊂ P2) :
-  (forall (s s' : S) p1 p2, Q1 s p1 s' = Q2 s p2 s') ->
-  [ P1 , Q1 ] ⊏ [ P2 , Q2 ].
-Proof.
-  intros.
-  apply (Refinement ([P1,Q1]) ([P2,Q2]) f).
-  unfold subset; simpl; intros.
-  rewrite H with (p2 := (f s x)); assumption.
 Qed.
 
 (*** SKIP **)
