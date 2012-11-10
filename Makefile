@@ -4,13 +4,14 @@ default: coq
 
 all: coq ag
 
-coq: show refinement while auxproofs example 
+coq: show refinement while auxproofs exampleverify example 
 
 show: Show.vo
 refinement: Refinement.vo
 while: While.vo
 auxproofs: AuxiliaryProofs.vo
 usability: Usability.vo
+exampleverify: ExampleVerify.vo
 example: Example.vo
 
 Show.vo: Show.v
@@ -25,10 +26,13 @@ While.vo: Show.vo Refinement.vo While.v
 AuxiliaryProofs.vo: AuxiliaryProofs.v
 	coqc AuxiliaryProofs.v
 
-Usability.vo: Refinement.vo While.vo Usability.v
+Usability.vo: While.vo Usability.v
 	coqc Usability.v
 
-Example.vo: Show.vo Refinement.vo While.vo AuxiliaryProofs.vo Usability.vo Example.v
+ExampleVerify.vo: AuxiliaryProofs.vo Usability.vo ExampleVerify.v
+	coqc ExampleVerify.v
+
+Example.vo: ExampleVerify.vo Example.v
 	coqc Example.v
 
 ag: CodeGen/AG.hs

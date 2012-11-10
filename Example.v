@@ -6,205 +6,87 @@ Require Import AuxiliaryProofs.
 Require Import Bool.
 Require Import While.
 Require Import Usability.
+Require Import ExampleVerify.
 Import While.Language.
 Import While.Semantics.
+Import ExampleVerify.Swap.
+Import ExampleVerify.Definitions.
+Import ExampleVerify.Proof.
 
-Module Swap.
-Import Bool.
+Section StepProofs.
 
-Definition SWAP := Spec ([fun _ => True, fun s _ s' => varP s = varQ s' /\ varP s' = varQ s]).
-
-Definition swapResult :
-  SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N).
+Lemma stepWhileProof :
+   forall s : S,
+   Is_false (evalBExpr (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) s) ->
+   1 + varR s = varQ s.
 Proof.
-  apply (refineTrans
-          (Spec ([fun _ => True , fun s _ s' => varP s = varQ s' /\ varN s' = varQ s]) ; 
-           P ::= Var N)).
-  apply refineFollowAssign.
-  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
-  apply refineSeqAssocR.
-  apply refineSplit; try apply refineRefl.
-  apply (refineTrans
-          (Spec ([fun _ => True , fun s _ s' => varP s = varP s' /\ varN s' = varQ s]) ;
-            Q ::= Var P)).
-  apply refineFollowAssign.
-  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
-  apply refineSplit; try apply refineRefl.
-  apply refineAssign.
-  simpl; intros.
-  destruct s as [N P Q R]; simpl.
-  split; reflexivity.
-Defined.
-
-Lemma swapTest : 
-  { c : WhileL | ((SWAP ⊑ c) /\ isExecutable c)}.
-Proof.
-  apply stepFollowAssign with (id := P) (expr := Var N)
-                              (Q' := fun s _ s' => varP s = varQ s' /\ varN s' = varQ s).
-  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.  
-  apply stepFollowAssign with (id := Q) (expr := Var P)
-                              (Q' := fun s _ s' => varP s = varP s' /\ varN s' = varQ s).
-  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
-  apply stepAssign with (id := N) (exp := Var Q).
-  simpl; intros; destruct s as [N P Q R]; simpl; split; reflexivity.
-Defined.
-
-End Swap.
-
-Module Definitions.
-
-Definition square : nat -> nat := fun n => n * n.
-
-Definition Inv : S -> Prop := fun X => square (varR X) <= varN X < square (varQ X).
-
-Definition WSPEC := Spec ([ (fun _ => True), fun _ _ X => square (varR X) <= varN X < square (1 + varR X)]).
-
-Definition W1 := Spec ([ fun _ => True, fun _ _ X => Inv X /\ 1 + varR X = varQ X]).
-
-Definition W2 := (Spec ([fun _ => True , K Inv])) ; (Spec ([Inv, fun _ _ X => Inv X /\ 1 + varR X = varQ X])).
-
-Definition PT3a :=
-  Assign_PT (fun s => mkS (varN s) (varP s) (1 + (varN s)) 0).
-
-Definition W3aa :=
-  R ::= (EConst 0).
-
-Definition W3ab :=
-  Q ::= (Plus (EConst 1) (Var N)).
-
-Definition W3a := W3aa ; W3ab.
-
-Definition WBody := 
-  Spec ([(fun s => Inv s /\ Is_true (negb (beq_nat (1 + varR s) (varQ s)))),
-          (fun _ _ s' => Inv s')]).  
-
-Definition W3b :=
-  let guard := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) in
-  While Inv guard WBody.
-
-Definition W4 :=
-  (Spec ([fun X => 1 + varR X < varQ X /\ Inv X, 
-          fun _ _ X => varR X < varP X < varQ X /\ Inv X])) ;
-  (Spec ([fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X])).
-
-Definition W5a :=
-  P ::= (Div2 (Plus (Var Q) (Var R))).
-
-Definition W5bThen := 
-  Spec ([fun s => (varN s < square (varP s)) /\ (varP s < varQ s) /\ Inv s,
-         fun _ _ s' => Inv s']).
-
-Definition W5bElse := 
-  Spec ([fun s => (varN s >= square (varP s)) /\ (varR s < varP s) /\ Inv s,
-         fun _ _ s' => Inv s']).
-
-Definition W5b :=
-  If (Lt (Var N) (Mult (Var P) (Var P))) W5bThen W5bElse.
-
-End Definitions.
-
-Module Proof.
-
-Import Definitions.
-Import While.CodeGeneration.
-Import Bool.
-
-Ltac refine_post_pt pt1 pt2 := apply (Refinement _ _ (fun s (y : pre pt1 s) => y : pre pt2 s)). 
-
-Ltac refine_post w1 w2 := 
-  apply (Refinement _ _ (fun s (y : pre (semantics w1) s) => y : pre (semantics w2) s)).
-
-Ltac assert_pre w1 w2 := 
-  assert (d : pre (semantics w1) ⊂ pre (semantics w2));
-  unfold pre,subset,semantics,w1,w2.
-
-Lemma step1 : WSPEC ⊑ W1.
-  Proof.    
-    refine_post WSPEC W1.
-    unfold subset.
-    intros X tt s [H1 H2]; simpl in *; rewrite H2; apply H1.  
-  Qed.
-
-Lemma step2 : W1 ⊑ W2.
-  Proof.
-    assert_pre W1 W2.
-    intros; exists I; intros; auto.
-    apply (Refinement _ _ d).
-    simpl; intros s Pre s' [t [H1 [H2 H3]]]; split; auto.
+    intros.
+    unfold Is_false in H.
+    remember (evalBExpr (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) s) as e; destruct e.
+    inversion H.
+    unfold evalBExpr in Heqe.
+    simpl in Heqe.
+    destruct s as [N P Q R]; simpl in *.
+    unfold negb in Heqe.
+    remember (match Q with
+              | 0 => false
+              | Datatypes.S m1 => beq_nat R m1
+              end) as e; destruct e.
+    destruct Q as [|Q].
+    inversion Heqe0.
+    apply beq_nat_eq in Heqe0.
+    rewrite Heqe0; reflexivity.
+    inversion Heqe.
 Qed.
 
-Lemma step3 : W2 ⊑ W3a ; W3b.
+Lemma weakenPreProof :
+   (fun s : S =>
+    Inv s /\
+    Is_true (evalBExpr (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) s))
+   ⊂ (fun s : S => 1 + varR s < varQ s /\ Inv s).
 Proof.
-  unfold W2,W3a,W3aa,W3ab,W3b,"⊑",semantics.
-  apply refineSplitPT.
-  simpl.
-  unfold Assign_PT, K, Inv.
-  apply (refineTransPT PT3a).
-  (* Part a *)
-    unfold K, Inv, PT3a, square; apply refineAssignPT.
-    simpl; intros; split; auto with arith.
-  (* refineTrans *)
-  unfold PT3a,Assign_PT.
-  apply refineSeqAssignPT.
-  intros; destruct s; simpl; reflexivity.
-  (* Part b *)
-     unfold WBody,evalBExpr,evalExpr.
-     apply refineWhile.
-     intros.
-     destruct s as [N P Q R]; simpl in *.
-     destruct Q as [|Q].
-     inversion H.
-     case_eq (beq_nat R Q); intros H'.
-     symmetry in H'; apply beq_nat_eq in H'.
-     rewrite H'; reflexivity.
-     rewrite H' in H; inversion H.
-  Qed.
-  
-Lemma step4 : WBody ⊑ W4.
-  assert_pre WBody W4.
-  simpl; intros.
-  split. 
-  inversion H as [H1 H2]; inversion H1 as [H3 H4].
-  split. 
-  unfold square in *; destruct s as [N P Q R]; unfold Inv in *; simpl in *.
-  unfold Is_true,negb in H2.
-  remember (if match Q with
-             | 0 => false
-             | Datatypes.S m1 => beq_nat R m1
-             end
-          then false
-          else true) as e.
-  destruct e; induction Q as [|Q HQ]. 
-  unfold square in H4; simpl in H; inversion H4.
-  remember (beq_nat R Q) as beq; destruct beq; inversion Heqe. 
-  symmetry in Heqbeq; apply beq_nat_false in Heqbeq.
-  unfold not in Heqbeq; clear H2; clear Heqe.
-  unfold square in *.
-  apply le_lt_trans with (p:=Datatypes.S Q * Datatypes.S Q) in H3.
-  apply lt_sq_n in H3; unfold "<" in H3; inversion H3. 
-  exfalso; apply Heqbeq; assumption.
-  subst; unfold "<"; apply le_n_S; assumption.
-  assumption.
-  exfalso; assumption.
-  exfalso; assumption.
-  assumption.
-  intros s' [H1 H2]; inversion H as [H3 H4]; split; assumption.
+    unfold subset; intros s [H1 H2].
+    split; [ | assumption ].
+    case_eq (evalBExpr (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) s).
+      unfold Inv in H1; destruct s as [N P Q R]; simpl in *; intros H3; destruct H1 as [H H1].
+      apply le_lt_trans with (p := square Q) in H; [ | assumption ].
+      apply lt_sq_n in H.
+      destruct Q as [|Q]; [ inversion H1 | ].
+        case_eq (beq_nat R Q); intros H4.
+          rewrite H4 in H3; inversion H3.        
+          apply beq_nat_false in H4.
+          apply lt_n_S.
+          inversion H; [ exfalso; apply H4; assumption | assumption ].
+      intros H; rewrite H in H2; inversion H2.
+Qed.
 
+Definition Seq1 := Spec
+     ([fun s : S => 1 + varR s < varQ s /\ Inv s,
+      fun (s : S) (_ : 1 + varR s < varQ s /\ Inv s) (s' : S) => Inv s']).
+Definition Seq2 := Spec
+       ([fun s : S => 1 + varR s < varQ s /\ Inv s,
+        fun (s : S) (_ : 1 + varR s < varQ s /\ Inv s) (s' : S) =>
+        varR s' < varP s' < varQ s' /\ Inv s']).
+Definition Seq3 := Spec
+       ([fun X : S => varR X < varP X < varQ X /\ Inv X,
+        fun (s : S) (_ : varR s < varP s < varQ s /\ Inv s) (s' : S) =>
+        Inv s']).
+
+Definition seqPTProof :
+   Seq1 ⊑ Seq2 ; Seq3.
+Proof.
+  assert (d: pre (semantics Seq1) ⊂ pre (semantics (Seq2 ; Seq3))).
+    unfold subset; simpl; intros.
+    exists H; intros; assumption.
   apply (Refinement _ _ d).
-  intros s PreS; unfold post,subset in *; simpl in *.
-  intros; inversion H as [x [H1 x']]; assumption.
+  intros s H; unfold subset; simpl; intros s' [s'' [H1 H2]]; assumption.
 Qed.
 
-Lemma step5 : W4 ⊑ W5a ; W5b.
-  apply refineSplit.
-  simpl.
-  apply refineAssign.
-  simpl.
-  intros s H.
-  split.
-  destruct s as [N P Q R].
-  unfold Inv in H.
-  simpl in *.
+Definition assignProof : forall (N Q R : nat),
+  Datatypes.S R < Q /\ square R <= N < square Q ->
+  R < div2 (Q + R) < Q /\ square R <= N < square Q.
+Proof.
+  intros N Q R H; split.
   inversion H as [H1 H2].
   split.  
 
@@ -224,161 +106,154 @@ Lemma step5 : W4 ⊑ W5a ; W5b.
   assumption.
 
   inversion H as [H1 [H2 H3]].
-  unfold Inv in *.
-  split; destruct s as [N P Q R]; simpl in *; assumption.  
-  unfold Inv,W5b.
-  unfold "⊑",semantics,W5bThen,W5bElse.
-  assert (d: pre ([fun X : S => varR X < varP X < varQ X /\ square (varR X) <= varN X < square (varQ X),
-             fun (s : S) (_ : varR s < varP s < varQ s /\ square (varR s) <= varN s < square (varQ s)) 
-             (X : S) => square (varR X) <= varN X < square (varQ X)])
-             ⊂ pre (semantics W5b)).
-  unfold pre,semantics,subset,W5b; simpl.
-  intros s [[H1 H2] [H3 H4]].
-  destruct s as [N P Q R]; simpl in *.
-  unfold Inv,Is_true,Is_false; simpl.
-  remember (proj1_sig (nat_lt_ge_bool N (P * P))) as e; destruct e.
-  unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
-  unfold sumbool_rect,Sumbool.sumbool_not in *.
-  remember (lt_ge_dec N (P * P)) as e; destruct e.
-  split; intros H5.
-  repeat split; assumption.
-  inversion H5.
-  inversion Heqe.
-  unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
-  unfold sumbool_rect,Sumbool.sumbool_not in *.
-  remember (lt_ge_dec N (P * P)) as e; destruct e.
-  inversion Heqe.
-  split; intros H5.
-  inversion H5.
-  repeat split; assumption.
-
-  apply (Refinement _ _ d).
-  simpl; unfold subset; intros s PreS s' H.
-  inversion PreS as [H1 H2].
-  assert (Ha: forall b, or (Is_true b) (Is_false b)) by 
-         (intros; destruct b; simpl in *; auto). 
-  destruct s as [N P Q R]; simpl in *.
-  inversion H as [H3 H4]. 
-  assert (H': or (Is_true (proj1_sig (nat_lt_ge_bool N (P * P))))
-                 (Is_false (proj1_sig (nat_lt_ge_bool N (P * P))))) by (apply Ha).
-  inversion H' as [H5 | H5].
-  apply H3 in H5; assumption.
-  apply H4 in H5; assumption.
+  unfold Inv in *; simpl in *.
+  split; assumption.  
 Qed.
 
-Lemma step6Then : W5bThen ⊑ Q ::= (Var P).
+Definition ThenSpec :=
+  Spec ([fun s : S => ((varR s < varP s < varQ s /\ Inv s) *
+                      Is_true (proj1_sig (nat_lt_ge_bool match s with
+                                                         | {| varN := n |} => n
+                                                         end
+                                                         (match s with
+                                                         | {| varP := p |} => p
+                                                         end * match s with
+                                                               | {| varP := p |} => p
+                                                               end))))%type,
+         fun (s : S) (_ : (varR s < varP s < varQ s /\ Inv s) *
+                          Is_true (proj1_sig
+                                  (nat_lt_ge_bool match s with
+                                                  | {| varN := n |} => n
+                                                  end
+                                                  (match s with
+                                                  | {| varP := p |} => p
+                                                  end * match s with
+                                                       | {| varP := p |} => p
+                                                       end)))) (s' : S) => Inv s']).
+
+Definition ElseSpec :=
+  Spec ([fun s : S => ((varR s < varP s < varQ s /\ Inv s) *
+                      Is_false (proj1_sig (nat_lt_ge_bool match s with
+                                                          | {| varN := n |} => n
+                                                          end
+                                                          (match s with
+                                                          | {| varP := p |} => p
+                                                          end * match s with
+                                                                | {| varP := p |} => p
+                                                                end))))%type,
+         fun (s : S) (_ : (varR s < varP s < varQ s /\ Inv s) *
+                          Is_false (proj1_sig (nat_lt_ge_bool match s with
+                                                              | {| varN := n |} => n
+                                                              end
+                                                              (match s with
+                                                              | {| varP := p |} => p
+                                                              end * match s with
+                                                                   | {| varP := p |} => p
+                                                                   end)))) (s' : S) => Inv s']).
+
+
+Lemma w5bThenProof : ThenPT ⊑ W5bThen.
 Proof.
-  apply refineAssign.
-  simpl.
-  intros s H.
-  unfold Inv in *.
-  destruct H as [H1 [H2 [H3 H4]]].
-  destruct s as [N P Q R].
-  simpl in *.
-  split.
-  assumption.
-  assumption.
+    assert (d: pre (semantics ThenPT) ⊂ pre (semantics (W5bThen))).
+    unfold subset,semantics,Inv; simpl; intros [N P Q R] [[[H1 H2] [H3 H4]] H]; simpl in *.
+    unfold Is_true in H; unfold Inv; simpl.
+    split.
+    remember (proj1_sig (nat_lt_ge_bool N (P * P))) as e; destruct e.
+    unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
+    unfold sumbool_rect,Sumbool.sumbool_not in *.
+    remember (lt_ge_dec N (P * P)) as e; destruct e.
+    assumption.
+    inversion Heqe.
+    inversion H.
+    repeat split; assumption.
+    apply (Refinement _ _ d).
+    simpl; unfold subset; intros s PreS s' H.
+    assumption.
 Qed.
 
-Lemma step6Else : W5bElse ⊑ R ::= (Var P).
+Lemma w5bElseProof : ElsePT ⊑ W5bElse.
 Proof.
-  apply refineAssign.
-  simpl.
-  intros s H.
-  destruct H as [H1 [H2 [H3 H4]]].
-  destruct s. unfold Inv in *.
-  simpl in *.
-  split; auto.
+  assert (d: pre (semantics ElsePT) ⊂ pre (semantics (W5bElse))).
+      unfold subset,semantics,Inv; simpl; intros [N P Q R] [[[H1 H2] [H3 H4]] H]; simpl in *.
+      unfold Is_false in H; unfold Inv; simpl in *.
+      unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
+      unfold sumbool_rect,Sumbool.sumbool_not in *.
+      remember (lt_ge_dec N (P * P)) as e; destruct e.
+      inversion H.
+      repeat split; assumption.
+    apply (Refinement _ _ d).
+    unfold subset; simpl; intros; assumption.
 Qed.
 
-Definition prgrm := (R ::= (EConst 0) ; Q ::= (Plus (EConst 1) (Var N))) ;
-  (While Inv (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))
-         (P ::= (Div2 (Plus (Var Q) (Var R))) ; (If (Lt (Var N) (Mult (Var P) (Var P))) 
-                      (Q ::= (Var P)) 
-                      (R ::= (Var P))))).
+End StepProofs.
 
-Theorem result : WSPEC ⊑ prgrm.
-Proof.
-  apply (refineTrans W1); try apply step1.
-  apply (refineTrans W2); try apply step2.
-  apply (refineTrans (W3a ; W3b)); try apply step3.
-  apply refineSplit; try apply refineRefl.
-  unfold W3b; apply refineBody.
-  apply (refineTrans W4); try apply step4.
-  apply (refineTrans (W5a ; W5b)); try apply step5.
-  apply refineSplit; try apply refineRefl.
-  unfold W5b; apply refineSplitIf; [apply step6Then | apply step6Else]. 
-Qed.
+Section Results.
 
-Lemma resultTest : 
+Lemma resultSqrt : 
   { c : WhileL | (WSPEC ⊑ c) /\ isExecutable c }.
 Proof.
-  unfold WSPEC.
   apply (step W1).
-  apply step1.
-  unfold W1.
+    apply step1.
   apply stepSeqPT with (Mid := Inv).
     apply step2.
-  unfold Inv.
-  apply stepFollowAssign with 
-        (id := Q) (expr := Plus (EConst 1) (Var N))
-        (Q' := fun _ _ s' => (square (varR s') <= varN s' < square (1 + varN s'))).
+  apply stepFollowAssign with (id := Q) (expr := Plus (EConst 1) (Var N))
+          (Q' := fun _ _ s' => (square (varR s') <= varN s' < square (1 + varN s'))).
     intros; destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl in *.
     assumption.
   apply stepAssign with (id := R) (exp := EConst 0).
-    simpl.
-    intros.
-    unfold square; destruct s as [N P Q R]; simpl.
+    unfold square; intros; destruct s as [N P Q R]; simpl in *.
     split; auto with arith.
   apply stepWhile with (cond := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))).
-    intros.
-    unfold Is_false in H.
-    remember (evalBExpr (Not (Eq (Plus (EConst 1) (Var R)) (Var Q))) s) as e; destruct e.
-    inversion H.
-    unfold evalBExpr in Heqe.
-    simpl in Heqe.
-    destruct s as [N P Q R].
-    simpl in *.
-    unfold negb in *.
-    remember (match Q with
-              | 0 => false
-              | Datatypes.S m1 => beq_nat R m1
-              end) as e; destruct e.
-    destruct Q as [|Q].
-    inversion Heqe0.
-    apply beq_nat_eq in Heqe0.
-    rewrite Heqe0; reflexivity.
-    inversion Heqe.
-
-  apply (step ((Spec ([fun X => 1 + varR X < varQ X /\ Inv X, 
-                          fun _ _ X => varR X < varP X < varQ X /\ Inv X])) ;
-                  (Spec ([fun X => varR X < varP X < varQ X /\ Inv X, fun _ _ X => Inv X])))).
-  apply step4.
-  apply (step (W5a ; W5b)). (* FIXME: for now, no stepSplit here due to big proof in step5 *)
-  apply step5.
-  apply stepSplit; [ unfold W5a; stop | apply stepSplitIf ].
-  apply (step (Q ::= Var P)); [ apply step6Then | stop ].
-  apply (step (R ::= Var P)); [ apply step6Else | stop ].
+    apply stepWhileProof.
+(*
+  apply stepWeakenPre with (P2 := (fun s : S => 1 + varR s < varQ s /\ Inv s)) 
+                           (f := weakenPreProof)
+                           (Q := fun (s : S) (_ : 1 + varR s < varQ s /\ Inv s)
+                           (s0 : S) => Inv s0); unfold subset; auto.
+*)
+  apply stepWeakenPre'' with (Q2 := fun (s : S) (_ : 1 + varR s < varQ s /\ Inv s)
+                                        (s' : S) => Inv s')
+                             (P2 := (fun s : S => 1 + varR s < varQ s /\ Inv s));
+    [ apply weakenPreProof | intros; reflexivity | ].
+  apply stepSeqPT with (Mid := (fun X => varR X < varP X < varQ X /\ Inv X)).
+    apply seqPTProof.
+  apply stepAssign with (id := P) (exp := Div2 (Plus (Var Q) (Var R))). 
+    unfold subset,Inv; simpl; destruct s as [N P Q R]; simpl in *.
+    apply assignProof. 
+  apply stepIf with (cond := Lt (Var N) (Mult (Var P) (Var P))).
+  apply stepSplitIf.
+  apply (step W5bThen); simpl.
+    apply w5bThenProof.
+  apply stepAssign with (id := Q) (exp := Var P).
+    unfold W5bThen,Inv; simpl; intros s [H1 [H2 [H3 H4]]].
+    destruct s as [N P Q R]; simpl in *; split; assumption.    
+  apply (step W5bElse); simpl.
+    apply w5bElseProof.
+  apply stepAssign with (id := R) (exp := Var P).
+    unfold W5bElse,Inv; simpl; intros s [H1 [H2 [H3 H4]]].
+    destruct s as [N P Q R]; simpl in *; split; assumption.    
 Defined.
 
-Lemma prgrmProof : isExecutable prgrm.
-Proof.  
-  unfold prgrm,isExecutable; simpl; auto.
-Qed.
+Lemma resultSwap : 
+  { c : WhileL | ((SWAP ⊑ c) /\ isExecutable c)}.
+Proof.
+  apply stepFollowAssign with (id := P) (expr := Var N)
+                              (Q' := fun s _ s' => varP s = varQ s' /\ varN s' = varQ s).
+  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.  
+  apply stepFollowAssign with (id := Q) (expr := Var P)
+                              (Q' := fun s _ s' => varP s = varP s' /\ varN s' = varQ s).
+  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
+  apply stepAssign with (id := N) (exp := Var Q).
+  simpl; intros; destruct s as [N P Q R]; simpl; split; reflexivity.
+Defined.
 
-Definition foo : WhileL := proj1_sig resultTest.
+Definition sqrtprgrm : WhileL := proj1_sig resultSqrt.
 
-Compute foo.
-
-(*
-Require Import String.
-Compute (whileToCode prgrm prgrmProof).
-*)
+Compute sqrtprgrm.
 
 (*
 Extraction Language Haskell.
-Extraction "Program.hs" foo W1.
+Extraction "Program.hs" sqrtprgrm.
 *)
 
-End Proof.
-
+End Results.
