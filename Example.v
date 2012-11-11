@@ -110,79 +110,28 @@ Proof.
   split; assumption.  
 Qed.
 
-Definition ThenSpec :=
-  Spec ([fun s : S => ((varR s < varP s < varQ s /\ Inv s) *
-                      Is_true (proj1_sig (nat_lt_ge_bool match s with
-                                                         | {| varN := n |} => n
-                                                         end
-                                                         (match s with
-                                                         | {| varP := p |} => p
-                                                         end * match s with
-                                                               | {| varP := p |} => p
-                                                               end))))%type,
-         fun (s : S) (_ : (varR s < varP s < varQ s /\ Inv s) *
-                          Is_true (proj1_sig
-                                  (nat_lt_ge_bool match s with
-                                                  | {| varN := n |} => n
-                                                  end
-                                                  (match s with
-                                                  | {| varP := p |} => p
-                                                  end * match s with
-                                                       | {| varP := p |} => p
-                                                       end)))) (s' : S) => Inv s']).
-
-Definition ElseSpec :=
-  Spec ([fun s : S => ((varR s < varP s < varQ s /\ Inv s) *
-                      Is_false (proj1_sig (nat_lt_ge_bool match s with
-                                                          | {| varN := n |} => n
-                                                          end
-                                                          (match s with
-                                                          | {| varP := p |} => p
-                                                          end * match s with
-                                                                | {| varP := p |} => p
-                                                                end))))%type,
-         fun (s : S) (_ : (varR s < varP s < varQ s /\ Inv s) *
-                          Is_false (proj1_sig (nat_lt_ge_bool match s with
-                                                              | {| varN := n |} => n
-                                                              end
-                                                              (match s with
-                                                              | {| varP := p |} => p
-                                                              end * match s with
-                                                                   | {| varP := p |} => p
-                                                                   end)))) (s' : S) => Inv s']).
-
-
-Lemma w5bThenProof : ThenSpec ⊑ W5bThen.
+Lemma thenProof {N P} (H : Is_true (proj1_sig (nat_lt_ge_bool N (P * P)))) :
+  N < square P.
 Proof.
-    assert (d: pre (semantics ThenSpec) ⊂ pre (semantics (W5bThen))).
-    unfold subset,semantics,Inv; simpl; intros [N P Q R] [[[H1 H2] [H3 H4]] H]; simpl in *.
-    unfold Is_true in H; unfold Inv; simpl.
-    split.
-    remember (proj1_sig (nat_lt_ge_bool N (P * P))) as e; destruct e.
-    unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
-    unfold sumbool_rect,Sumbool.sumbool_not in *.
-    remember (lt_ge_dec N (P * P)) as e; destruct e.
-    assumption.
-    inversion Heqe.
-    inversion H.
-    repeat split; assumption.
-    apply (Refinement _ _ d).
-    simpl; unfold subset; intros s PreS s' H.
-    assumption.
-Qed.
+  unfold Is_true in H; unfold Inv; simpl.
+  remember (proj1_sig (nat_lt_ge_bool N (P * P))) as e; destruct e.
+  unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
+  unfold sumbool_rect,Sumbool.sumbool_not in *.
+  remember (lt_ge_dec N (P * P)) as e; destruct e.
+  assumption.
+  inversion Heqe.
+  inversion H.
+Qed.  
 
-Lemma w5bElseProof : ElseSpec ⊑ W5bElse.
+Lemma elseProof {N P} (H : Is_false (proj1_sig (nat_lt_ge_bool N (P * P)))) :
+  square P <= N.
 Proof.
-  assert (d: pre (semantics ElseSpec) ⊂ pre (semantics (W5bElse))).
-      unfold subset,semantics,Inv; simpl; intros [N P Q R] [[[H1 H2] [H3 H4]] H]; simpl in *.
-      unfold Is_false in H; unfold Inv; simpl in *.
-      unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
-      unfold sumbool_rect,Sumbool.sumbool_not in *.
-      remember (lt_ge_dec N (P * P)) as e; destruct e.
-      inversion H.
-      repeat split; assumption.
-    apply (Refinement _ _ d).
-    unfold subset; simpl; intros; assumption.
+  unfold Is_false in H; unfold Inv; simpl in *.
+  unfold proj1_sig,nat_lt_ge_bool,Sumbool.bool_of_sumbool,sumbool_rec in *.
+  unfold sumbool_rect,Sumbool.sumbool_not in *.
+  remember (lt_ge_dec N (P * P)) as e; destruct e.
+  inversion H.
+  assumption.
 Qed.
 
 End StepProofs.
@@ -213,17 +162,13 @@ Proof.
   apply stepAssign with (id := P) (exp := Div2 (Plus (Var Q) (Var R))). 
     unfold subset,Inv; simpl; destruct s as [N P Q R]; simpl in *.
     apply assignProof. 
-  apply stepIf with (cond := Lt (Var N) (Mult (Var P) (Var P))).
-  apply (step W5bThen); simpl.
-    apply w5bThenProof.
+  apply stepIf with (cond := Lt (Var N) (Mult (Var P) (Var P))); simpl.
   apply stepAssign with (id := Q) (exp := Var P).
-    unfold W5bThen,Inv; simpl; intros s [H1 [H2 [H3 H4]]].
-    destruct s as [N P Q R]; simpl in *; split; assumption.
-  apply (step W5bElse); simpl.
-    apply w5bElseProof.
+    unfold Inv; simpl; intros s [[H1 [H2 H3]] H4].
+    destruct s as [N P Q R]; simpl in *; split; [ assumption | apply (thenProof H4) ].
   apply stepAssign with (id := R) (exp := Var P).
-    unfold W5bElse,Inv; simpl; intros s [H1 [H2 [H3 H4]]].
-    destruct s as [N P Q R]; simpl in *; split; assumption.    
+    unfold Inv; simpl; intros s [[H1 [H2 H3]] H4].
+    destruct s as [N P Q R]; simpl in *; split; [ apply (elseProof H4) | assumption ].    
 Defined.
 
 Lemma resultSwap : 
