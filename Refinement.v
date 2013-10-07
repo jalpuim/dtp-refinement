@@ -61,11 +61,11 @@ Proof.
   simpl in *; assumption.
 Qed.
 
-Lemma weakenPre (P1 P2 : Pow S) (Q : forall s, P2 s -> Pow S) (f : P1 ⊂ P2) :
-  [ P1 , (fun s p s' => Q s (f s p) s') ] ⊏ [ P2 , Q ].
+Lemma weakenPre (P1 P2 : Pow S) (f : P1 ⊂ P2) (Q : S -> Pow S) :
+  [P1, fun s _ => Q s ] ⊏ [P2 , fun s _ => Q s ].
 Proof.
   intros.
-  apply (Refinement ([P1, fun (s : S) (p : P1 s) (s' : S) => Q s (f s p) s']) ([P2, Q]) f).
+  apply (Refinement ([P1, fun s _ => Q s]) ([P2, fun s _ => Q s]) f).
   unfold post,subset; intros; trivial.
 Qed.
 

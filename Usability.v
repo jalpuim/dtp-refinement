@@ -155,14 +155,16 @@ Proof.
   apply strengthenPost; assumption.
 Defined.
 
-Lemma stepWeakenPre {P1} {P2 : Pow S} (Q : forall (s : S), P2 s -> Pow S) (f : P1 ⊂ P2) :
-  { c : WhileL | (Spec ([ P2 , Q ]) ⊑ c) /\ isExecutable c } ->
-  { c : WhileL | (Spec ([ P1 , (fun s p s' => Q s (f s p) s') ]) ⊑ c) /\ 
+Lemma stepWeakenPre {P1} {Q} (P2 : Pow S) (f : P1 ⊂ P2) :
+  let Q'  := (fun s _ => Q s) in
+  let Q'' := (fun s _ => Q s) in
+  { c : WhileL | (Spec ([ P2 , Q'' ]) ⊑ c) /\ isExecutable c } ->
+  { c : WhileL | (Spec ([ P1 , Q' ]) ⊑ c) /\ 
                  isExecutable c }.
 Proof.
-  intros [c [H1 H2]].
+  intros Q' Q'' [c [H1 H2]].
   exists c.
   split; [ | assumption ].
-  apply (refineTrans (Spec ([ P2 , Q ]))); [ | assumption].
-  apply weakenPre; assumption.
+  apply (refineTrans (Spec ([ P2 , Q'' ]))); [ | assumption ].
+  unfold Q',Q''; apply weakenPre; exact f.
 Defined.

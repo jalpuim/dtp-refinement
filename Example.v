@@ -141,6 +141,7 @@ Section Results.
 Lemma resultSqrt : 
   { c : WhileL | (WSPEC ⊑ c) /\ isExecutable c }.
 Proof.
+  unfold WSPEC.
   apply (step W1).
     apply step1.
   apply stepSeqPT with (Mid := Inv).
@@ -153,10 +154,9 @@ Proof.
     unfold square; intros; destruct s as [N P Q R]; simpl in *.
     split; auto with arith.
   apply stepWhile with (cond := (Not (Eq (Plus (EConst 1) (Var R)) (Var Q)))).
-    apply stepWhileProof. 
-  apply stepWeakenPre with (f := weakenPreProof)
-                           (Q := fun (s : S) (_ : 1 + varR s < varQ s /\ Inv s)
-                                     (s' : S) => Inv s').
+    apply stepWhileProof.
+  apply stepWeakenPre with (P2 := (fun s : S => 1 + varR s < varQ s /\ Inv s)).
+    apply weakenPreProof. 
   apply stepSeqPT with (Mid := (fun X => varR X < varP X < varQ X /\ Inv X)).
     apply seqPTProof.
   apply stepAssign with (id := P) (exp := Div2 (Plus (Var Q) (Var R))). 
@@ -192,9 +192,8 @@ Compute sqrtCode.
 Compute swapCode.
 *)
 
-(*
-Extraction Language Haskell.
-Extraction "Program.hs" sqrtprgrm.
-*)
-
 End Results.
+
+
+Extraction Language Haskell.
+Extraction "Program.hs" sqrtCode.
