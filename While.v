@@ -64,6 +64,7 @@ Module Semantics.
 Definition setIdent (ident: Addr.t) (n : nat) : heap -> heap :=
   fun h => update h ident n.
 
+(* FIXME: adapt this so that the precondition of getIdent requires the identifier to already be present in the heap *)
 Definition getIdent (ident: Addr.t) (h : heap) : nat 
   := match (find h ident) with
        | None => 0
@@ -106,6 +107,7 @@ end.
 
 Fixpoint semantics (w: WhileL) : PT :=
   match w with
+  (* FIXME: do we want to return the allocated address here? *)
   | New x         => Assign_PT (fun (s : S) => setIdent (alloc s) x s)
   | Skip          => Skip_PT
   | Assign id exp => Assign_PT (fun s => (setIdent id (evalExpr exp s)) s)
@@ -317,7 +319,8 @@ Proof. intros; assumption. Qed.
 
 Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
   match w as w' return (isExecutable w' -> string) with
-  | New x          => fun _ => "int x;" (* FIXME *)
+  | New x          => fun _ => "int x;" 
+    (* FIXME: should not be x in the above line, but the freshly allocated address *)
   | Skip           => fun _ => ((sp indent) ++ "skip;")
   | Assign id exp  => fun _ => 
                       ((sp indent) ++ (identToCode id) ++ " = " ++ (exprToCode exp)) ++ ";"
