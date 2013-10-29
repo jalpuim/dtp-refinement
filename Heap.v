@@ -1,57 +1,141 @@
+Require Import Arith.
+Require Export FMapAVL.
+Require Export Coq.Structures.OrderedType.
+Require Import Omega.
+Require Import String.
 
+(* Addresses *)
 
-Set Implicit Arguments.
+Module Addr <: OrderedType.
 
-(** Basic Heap model **)
-Variable ptr : Set.
-Variable ptr_eq_dec : forall (a b : ptr), {a = b} + {a <> b}.
+  Inductive addr : Type :=
+    MkAddr : nat -> addr.
 
-Inductive dynamic : Type :=
-  | Dyn : forall T, T -> dynamic.
+  Definition fromAddr (p : addr) : nat :=
+    match p with
+      | MkAddr x => x
+    end.
 
-Definition heap := ptr -> option dynamic.
+  Definition t := addr.
 
-(** Simple heap creation and manipulation functions **)
+  Definition eq := @eq t.
+  Definition eq_refl := @eq_refl t.
+  Definition eq_sym := @eq_sym t.
+  Definition eq_trans := @eq_trans t.
 
-Definition empty : heap := fun _ => None.
+  Definition eq_dec (p p' : addr) : {eq p p'} + {~ eq p p'}. 
+    unfold eq; repeat decide equality.
+  Defined.
 
-Definition singleton (p : ptr) (v : dynamic) : heap :=
-  fun p' => if ptr_eq_dec p' p then Some v else None.
+  Definition lt (p p' : addr) := lt (fromAddr p) (fromAddr p').
 
-Definition read (h : heap) (p : ptr) : option dynamic := h p.
+  Ltac destruct_addrs := unfold lt in *; unfold eq in *; repeat match goal with
+                                 | [H : addr |- _ ] => destruct H
+                               end; simpl fromAddr in *.
+  
+  Definition lt_trans : forall x y z, lt x y -> lt y z -> lt x z.
+    intros; destruct_addrs; now eauto with arith.
+  Qed.
 
-Definition write (h : heap) (p : ptr) (v : dynamic) : heap :=
-  fun p' => if ptr_eq_dec p' p then Some v else h p'.
+  Definition lt_not_eq : forall x y, lt x y -> ~ eq x y.
+    intros; destruct_addrs; intros F; inversion F; omega.
+  Qed.
+  Definition compare p p' : Compare lt eq p p'.
+    destruct p as [x]; destruct p' as [y].
+    remember (nat_compare x y) as c; destruct c.
+    - apply EQ; assert (x = y) by now (apply nat_compare_eq).
+      subst; apply eq_refl.
+    - apply LT; assert (x < y) by now (apply nat_compare_lt).
+      unfold lt; assumption.
+    - apply GT; assert (x > y) by now (apply nat_compare_gt).
+      unfold lt; assumption.
+  Defined.
 
-Definition free (h : heap) (p : ptr) : heap :=
-  fun p' => if ptr_eq_dec p' p then None else h p'.
+  Definition incr (addr : Addr.t) : Addr.t :=
+    match addr with
+      | MkAddr n => MkAddr (S n)
+    end.
 
-Infix "|-->" := singleton (at level 35, no associativity) : heap_scope.
-Notation "a # b" := (read a b) (at level 55, no associativity) : heap_scope.
-Notation "h ## p <- v" := (write h p v) (no associativity, at level 60, p at next level) : heap_scope.
-Infix "###" := free (no associativity, at level 60) : heap_scope.
+  Definition max (addr addr' : Addr.t) : Addr.t :=
+    match compare addr addr' with
+        | GT _ => addr
+        | _ => addr'
+    end.
 
-(** Properties of heaps **)
+  Lemma maxProp1 : forall n m, Addr.fromAddr n <= Addr.fromAddr (Addr.max n m).
+    Proof.
+      intros n m; unfold Addr.max.
+      destruct (Addr.compare n m); unfold Addr.lt in *; unfold Addr.eq in *; subst; omega.
+    Qed.  
 
-Definition hprop := heap -> Prop.
+  Lemma maxProp2 : forall n m, Addr.fromAddr m <= Addr.fromAddr (Addr.max n m).
+    Proof.
+      intros n m; unfold Addr.max.
+      destruct (Addr.compare n m); unfold Addr.lt in *; unfold Addr.eq in *; subst; omega.
+    Qed.
 
-Definition hprop_empty : hprop := eq empty.
-Notation "'__'" := hprop_empty : hprop_scope.
-Notation "'emp'" := hprop_empty : hprop_scope.
+  Hint Resolve maxProp1 maxProp2.
 
-Definition hprop_any : hprop := fun _ => True.
-Notation "??" := hprop_any : hprop_scope.
+  Open Local Scope string_scope.
 
-Open Local Scope heap_scope.
+  Definition printAddr (a : addr) (show : nat -> string) : string := 
+    "x" ++ show (fromAddr a).
 
-Definition hprop_and (p1 p2 : hprop) : hprop := fun h => p1 h /\ p2 h.
-Infix "&" := hprop_and (at level 39, left associativity) : hprop_scope.
+End Addr.
 
-Definition hprop_ex T (p : T -> hprop) : hprop := fun h => exists v, p v h.
-Notation "'Exists' v :@ T , p" := (hprop_ex (fun v : T => p)) 
-  (at level 90, T at next level).
+(** Heaps **)
 
-Definition ptsto_any(p:ptr) : hprop := Exists A :@ Set, Exists v :@ A, fun h => (h#p = Some (Dyn v)).
-Notation "p '-->?'" := (ptsto_any p 0) (at level 38, no associativity) : hprop_scope.
-Notation "p '-[' q ']->?'" := (ptsto_any p q) (at level 38, no associativity) : hprop_scope.
+Module M := FMapAVL.Make(Addr).
+
+Definition val := nat.
+
+Definition heap: Type := M.t val.
+
+Definition find (h: heap) k := M.find k h.
+
+Definition update (h : heap) k v := M.add k v h.
+
+Definition empty : heap := M.empty nat.
+
+(** Allocation **)
+
+Fixpoint maxTree {e : Type} (t : M.Raw.tree e) (a : Addr.t) : Addr.t :=
+  match t with
+    | M.Raw.Leaf => Addr.incr a
+    | M.Raw.Node l y e r h => maxTree r (Addr.max a y)
+  end.
+
+Definition maxHeap (h : heap) (a : Addr.t) :=
+  match h with
+   | {| M.this := t; M.is_bst := is_bst |} => maxTree t a
+  end.
+
+Lemma maxStep {e : Type} (t : heap) : forall a, Addr.lt a (maxTree (M.this t) a).
+  Proof.
+    destruct t as [this H]; induction this.
+    - destruct a; unfold Addr.lt; simpl; omega.
+    - simpl; intros a; inversion H; subst.
+      unfold Addr.lt; eapply le_lt_trans; [now (apply Addr.maxProp1) | now (apply (IHthis2 H6))].
+  Qed.
+
+Lemma isLeast (t : heap) : forall a, M.Raw.lt_tree (maxHeap t a) (M.this t).
+  destruct t as [this is_bst]; induction this.
+  - intros; now apply M.Raw.Proofs.lt_leaf.
+  - inversion is_bst; subst; simpl in *; intros a. 
+    assert (ltM1 : Addr.fromAddr k <= Addr.fromAddr (Addr.max a k)) by apply (Addr.maxProp2 a k).
+    assert (ltM2 : Addr.fromAddr (Addr.max a k) < Addr.fromAddr (maxTree this2 (Addr.max a k)))
+        by apply (maxStep (e:=val) {| M.this := this2; M.is_bst := H5 |}).
+    assert (ltM3 : Addr.fromAddr k < Addr.fromAddr (maxTree this2 (Addr.max a k))) by omega.
+    apply M.Raw.Proofs.lt_tree_node.
+    * apply (M.Raw.Proofs.lt_tree_trans ltM3 H6).
+    * now apply IHthis2.
+    * assumption.
+  Qed.
+
+Definition alloc (h : heap) : Addr.t := maxHeap h (Addr.MkAddr 0).
+    
+Lemma allocFresh (h : heap) : ~ M.In (alloc h) h.
+  assert (H : ~ M.Raw.In (alloc h) (M.this h)) by apply M.Raw.Proofs.lt_tree_not_in, isLeast.
+  now (intros F; apply H; apply M.Raw.Proofs.In_alt).
+Qed.
 

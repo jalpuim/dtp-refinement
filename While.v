@@ -5,38 +5,13 @@ Require Import Arith.Bool_nat.
 Require Import Div2.
 Require Import Show.
 Require Export Refinement.
+Require Import Heap.
 
 Module Language.
 
-Definition setN : nat -> S -> S := fun x s =>
-  match s with
-    | mkS _ p q r => mkS x p q r
-  end.
-
-Definition setP : nat -> S -> S := fun x s =>
-  match s with
-    | mkS n _ q r => mkS n x q r
-  end.
-
-Definition setQ : nat -> S -> S := fun x s =>
-  match s with
-    | mkS n p _ r => mkS n p x r
-  end.
-
-Definition setR : nat -> S -> S := fun x s =>
-  match s with
-    | mkS n p q _ => mkS n p q x
-  end.
-
-(* Identifiers *) 
-
-Inductive Identifier : Type :=
-  | N : Identifier
-  | P : Identifier
-  | Q : Identifier
-  | R : Identifier.
-
 (* Expressions *)
+
+Definition Identifier := Addr.t.
 
 Inductive Expr : Type :=
   | Var    : Identifier -> Expr
@@ -60,6 +35,7 @@ Inductive BExpr : Type :=
 (* While Language *)
 
 Inductive WhileL : Type :=
+  | New    : nat -> WhileL
   | Skip   : WhileL
   | Assign : Identifier -> Expr -> WhileL
   | Seq    : WhileL -> WhileL -> WhileL
@@ -72,6 +48,7 @@ Notation "id ::= exp" := (Assign id exp) (at level 52).
 
 Fixpoint isExecutable (w: WhileL) : Prop :=
   match w with 
+  | New _         => True
   | Skip          => True
   | Assign id exp => True
   | Seq st1 st2   => (isExecutable st1) /\ (isExecutable st2)
@@ -80,35 +57,33 @@ Fixpoint isExecutable (w: WhileL) : Prop :=
   | Spec pt       => False
 end.
 
-(*
-Extraction Language Haskell.
-Extraction "While.hs" WhileL.
-*)
 End Language.
 
 Module Semantics.
 
+Definition setIdent (ident: Addr.t) (n : nat) : heap -> heap :=
+  fun h => update h ident n.
+
+Definition getIdent (ident: Addr.t) (h : heap) : nat 
+  := match (find h ident) with
+       | None => 0
+       | Some x => x
+     end.
+  (* Alternatively, use these tactics *)
+(* Definition getIdent (ident: Addr.t) (s : S) (h : heap) (H : M.In ident h) : nat *)
+  (* remember (find h ident) as l; destruct l. *)
+  (* - exact v. *)
+  (* - destruct h as [this is_bst]; assert (~ M.Raw.In ident this) by *)
+  (*    now (apply (M.Raw.Proofs.not_find_iff)). *)
+  (*   assert (M.Raw.In ident this) by (now (apply M.Raw.Proofs.In_alt)). *)
+  (*   now exfalso. *)
+  (* Qed. *)
+
 Import Language.
 
-Definition setIdent (ident: Identifier) (n : nat) : S -> S :=
-  match ident with
-  | N => setN n
-  | P => setP n
-  | Q => setQ n
-  | R => setR n
-end.
-
-Definition getIdent (ident: Identifier) (s : S) : nat := 
-  match ident , s with
-  | N , mkS n _ _ _ => n
-  | P , mkS _ p _ _ => p
-  | Q , mkS _ _ q _ => q
-  | R , mkS _ _ _ r => r
-end.
-
-Fixpoint evalExpr (e: Expr) (s : S) : nat :=
+Fixpoint evalExpr (e: Expr) (s : heap) : nat :=
   match e with
-  | Var n     => (getIdent n) s
+  | Var n     => getIdent n s
   | EConst n  => n
   | Plus x y  => evalExpr x s + evalExpr y s
   | Minus x y => evalExpr x s - evalExpr y s
@@ -116,7 +91,7 @@ Fixpoint evalExpr (e: Expr) (s : S) : nat :=
   | Div2 x    => div2 (evalExpr x s)
 end.
 
-Fixpoint evalBExpr (b: BExpr) (s: S) : bool :=
+Fixpoint evalBExpr (b: BExpr) (s: heap) : bool :=
   match b with
   | BConst b  => b 
   | And b1 b2 => andb (evalBExpr b1 s) (evalBExpr b2 s) 
@@ -131,6 +106,7 @@ end.
 
 Fixpoint semantics (w: WhileL) : PT :=
   match w with
+  | New x         => Assign_PT (fun (s : S) => setIdent (alloc s) x s)
   | Skip          => Skip_PT
   | Assign id exp => Assign_PT (fun s => (setIdent id (evalExpr exp s)) s)
   | Seq st1 st2   => Seq_PT (semantics st1) (semantics st2)
@@ -283,16 +259,14 @@ End Semantics.
 Module CodeGeneration.
 
 Import Language.
+Import Heap.
 
 Open Local Scope string_scope.
 
+Definition t := Addr.t.
+
 Definition identToCode (ident: Identifier) : string :=
-  match ident with
-  | N => "n"
-  | P => "p"
-  | Q => "q"
-  | R => "r"
-  end.
+  "x_" ++ (Addr.printAddr ident print_nat).
 
 Fixpoint exprToCode (e: Expr) : string :=
   match e with
@@ -343,6 +317,7 @@ Proof. intros; assumption. Qed.
 
 Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
   match w as w' return (isExecutable w' -> string) with
+  | New x          => fun _ => "int x;" (* FIXME *)
   | Skip           => fun _ => ((sp indent) ++ "skip;")
   | Assign id exp  => fun _ => 
                       ((sp indent) ++ (identToCode id) ++ " = " ++ (exprToCode exp)) ++ ";"

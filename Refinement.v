@@ -7,8 +7,9 @@
 *)
 
 Require Import Bool.
+Require Import Heap.
 
-Record S : Type := mkS {varN : nat; varP : nat; varQ : nat; varR : nat}.
+Definition S := heap.
 
 Definition Pow : Type -> Type := fun a => a -> Prop.
 
