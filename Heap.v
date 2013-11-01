@@ -88,6 +88,9 @@ End Addr.
 Module M := FMapAVL.Make(Addr).
 
 Definition val := nat.
+(* Inductive Dynamic : Type :=
+  | dyn : forall a, a -> Dynamic
+*)
 
 Definition heap: Type := M.t val.
 
@@ -110,6 +113,10 @@ Definition maxHeap (h : heap) (a : Addr.t) :=
    | {| M.this := t; M.is_bst := is_bst |} => maxTree t a
   end.
 
+Definition alloc (h : heap) : Addr.t := maxHeap h (Addr.MkAddr 0).
+
+(* Properties of allocate *)
+
 Lemma maxStep {e : Type} (t : heap) : forall a, Addr.lt a (maxTree (M.this t) a).
   Proof.
     destruct t as [this H]; induction this.
@@ -131,8 +138,6 @@ Lemma isLeast (t : heap) : forall a, M.Raw.lt_tree (maxHeap t a) (M.this t).
     * now apply IHthis2.
     * assumption.
   Qed.
-
-Definition alloc (h : heap) : Addr.t := maxHeap h (Addr.MkAddr 0).
     
 Lemma allocFresh (h : heap) : ~ M.In (alloc h) h.
   assert (H : ~ M.Raw.In (alloc h) (M.this h)) by apply M.Raw.Proofs.lt_tree_not_in, isLeast.

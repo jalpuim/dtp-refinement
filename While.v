@@ -82,7 +82,9 @@ Definition getIdent (ident: Addr.t) (h : heap) : nat
 
 Import Language.
 
-Fixpoint evalExpr (e: Expr) (s : heap) : nat :=
+(* Fixpoint pre (e : Expr) (s : heap) : Prop. *)
+
+Fixpoint evalExpr (e: Expr) (s : heap) (*H : pre e s*) : nat :=
   match e with
   | Var n     => getIdent n s
   | EConst n  => n
@@ -319,7 +321,7 @@ Proof. intros; assumption. Qed.
 
 Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
   match w as w' return (isExecutable w' -> string) with
-  | New x          => fun _ => "int x;" 
+  | New x          => fun _ => "FIXME" (*fun _ => do n <- fresh; let varName = "x_" ++ show n ; return (varName ++ "=" ++ exprToCode x) *)
     (* FIXME: should not be x in the above line, but the freshly allocated address *)
   | Skip           => fun _ => ((sp indent) ++ "skip;")
   | Assign id exp  => fun _ => 

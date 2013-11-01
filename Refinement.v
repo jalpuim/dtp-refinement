@@ -9,7 +9,9 @@
 Require Import Bool.
 Require Import Heap.
 
-Definition S := heap.
+Module R.
+
+Parameter S : Type.
 
 Definition Pow : Type -> Type := fun a => a -> Prop.
 
@@ -420,3 +422,5 @@ Lemma refineIfPT'' (cond : S -> bool) (pt : PT) (PThen PElse : Pow S) :
     unfold subset; intros.
     simpl in *; assumption.
   Qed.
+
+End R.
