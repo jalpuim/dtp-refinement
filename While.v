@@ -185,12 +185,33 @@ Proof.
   unfold "⊑",semantics; apply refineSeqPT.
 Qed.
 
-(* TODO: Finish this *)
+Definition refineTrans (w2 w1 w3 : WhileL) : 
+  w1 ⊑ w2 -> w2 ⊑ w3 -> w1 ⊑ w3.
+    unfold "⊑",semantics; apply refineTransPT.
+  Defined.
+
+Definition refineRefl (w : WhileL) :
+  w ⊑ w.
+    unfold "⊑",semantics; apply refineReflPT.
+  Defined.
+
 Lemma refineSeqAssocR : forall (w w1 w2 w3 : WhileL),
   (w ⊑ (w1 ; w2) ; w3) -> (w ⊑ w1 ; w2 ; w3).
 Proof.
   intros.
-Admitted.
+  apply (refineTrans ((w1; w2); w3)).
+  assumption.
+  apply refineSeqAssocR_PT.
+Defined.
+
+Lemma refineSeqAssocL : forall (w w1 w2 w3 : WhileL),
+  (w ⊑ w1 ; w2 ; w3) -> (w ⊑ (w1 ; w2) ; w3).
+Proof.
+  intros.
+  apply (refineTrans (w1; w2; w3)).
+  assumption.
+  apply refineSeqAssocL_PT.
+Defined.
 
 Lemma refineIf (cond : BExpr) (pt : PT) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
@@ -211,16 +232,6 @@ Lemma refineWhile (inv : Pow S) (cond : BExpr) (Q : Pow S)
   Proof.
     unfold "⊑",semantics; now (apply refineWhilePT).
 Qed.
-
-Definition refineTrans (w2 w1 w3 : WhileL) : 
-  w1 ⊑ w2 -> w2 ⊑ w3 -> w1 ⊑ w3.
-    unfold "⊑",semantics; apply refineTransPT.
-  Defined.
-
-Definition refineRefl (w : WhileL) :
-  w ⊑ w.
-    unfold "⊑",semantics; apply refineReflPT.
-  Defined.
 
 Definition refineSplit (w1 w2 w3 w4 : WhileL) :
   (w1 ⊑ w3) -> (w2 ⊑ w4) -> (w1 ; w2) ⊑ (w3 ; w4).

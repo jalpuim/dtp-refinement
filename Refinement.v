@@ -163,26 +163,6 @@ Proof.
   intros; inversion H0; inversion H1; rewrite H.
   rewrite <- x1; rewrite <- H2; reflexivity.
 Qed.
-
-(* TODO: Finish this *)
-Lemma refineSeqAssoc_PT : forall (pt1 pt2 pt3 : PT),
-  ((pt1 ;; pt2) ;; pt3) ⊏ (pt1 ;; pt2 ;; pt3).
-Proof.
-  intros.  
-  assert (d: pre ((pt1 ;; pt2) ;; pt3) ⊂ pre (pt1;; pt2;; pt3)).
-  unfold subset; simpl; intros.
-  destruct H as [[H1 H2] H3].
-  exists H1.
-  intros.
-  simpl in H3.
-  assert (H': post pt1 s H1 t) by (apply H).
-  apply H2 in H.
-  exists H.
-  intros u H4.
-  apply H3.
-  exists t.
-  exists H'.
-Admitted.
   
 Lemma seqExtendL (pt1 pt2 : PT) (U : Pow S) (s : S) : 
   extend pt1 (extend pt2 U) s -> extend (Seq_PT pt1 pt2) U s.
@@ -224,6 +204,21 @@ Definition If_PT (cond : S -> bool) (Then Else : PT) : PT :=
          (forall (p : Is_false (cond s)), post Else s (snd pres p) s')
   in
   [ ifPre , ifPost ].
+
+Lemma refineIfPT' (cond : S -> bool) (pt : PT) :
+  pt ⊏ If_PT cond pt pt.
+  Proof.
+    Print Refinement.
+    set (d (s : S) (X : pre pt s) := 
+      (fun H : Is_true (cond s) => X, fun H : Is_false (cond s) => X)).
+    apply (Refinement pt (If_PT cond pt pt) d).
+    unfold subset; simpl; intros.
+    destruct H as [ T F ].
+    assert (Ha : forall p, Is_true p \/ Is_false p) by 
+    (intros; destruct p; [ left; unfold Is_true; trivial | right; unfold Is_false; trivial ]).
+    assert (Ha' : Is_true (cond s) \/ Is_false (cond s)) by (apply Ha).
+    inversion Ha'; [ apply T; assumption | apply F; assumption ].
+Qed.
 
 (* Law 5.1 *)
 Lemma refineIfPT (cond : S -> bool) (pt : PT) :
@@ -385,6 +380,68 @@ Proof.
   intros; assumption.
 Qed.
 
+Lemma refineSeqAssocR_PT_pre : forall (pt1 pt2 pt3 : PT),
+  pre ((pt1 ;; pt2) ;; pt3) ⊂ pre (pt1;; pt2;; pt3).
+Proof.
+  unfold subset; simpl; intros.
+  destruct H as [[H1 H2] H3].
+  exists H1.
+  intros.
+  simpl in H3.
+  eexists.
+  intros u H4.
+  apply H3.
+  exists t.
+  exists H.
+  exact H4.
+Defined.
+
+Lemma refineSeqAssocR_PT : forall (pt1 pt2 pt3 : PT),
+  ((pt1 ;; pt2) ;; pt3) ⊏ (pt1 ;; pt2 ;; pt3).
+Proof.
+  intros.
+  apply (Refinement _ _ (refineSeqAssocR_PT_pre _ _ _)).
+  refine_simpl.
+  intros.
+  destruct H as [t [q [t' [q' H]]]].
+  exists t'.
+  repeat destruct x; simpl in *.
+  exists (ex_intro _ t (ex_intro _ q q')).
+  exact H.
+Defined.
+
+Lemma refineSeqAssocL_PT_pre : forall (pt1 pt2 pt3 : PT),
+  pre (pt1 ;; pt2 ;; pt3) ⊂ pre ((pt1;; pt2);; pt3).
+Proof.
+  unfold subset; simpl; intros.
+  destruct H as [H1 H2].
+  exists (exist _ _ (fun (t : S) (post1 : post pt1 s _ t) => match H2 t post1 with
+                                                             exist p h => p
+                                                             end)).
+  simpl.
+  intros t [t' [H3 H4]].
+  destruct (H2 t' H3).
+  apply p.
+  exact H4.
+Defined.
+
+Lemma refineSeqAssocL_PT : forall (pt1 pt2 pt3 : PT),
+  (pt1 ;; pt2 ;; pt3) ⊏ ((pt1 ;; pt2) ;; pt3).
+Proof.
+  intros.
+  apply (Refinement _ _ (refineSeqAssocL_PT_pre _ _ _)).
+  refine_simpl.
+  intros s x s' H.
+  destruct H as [t [[t' [p q]] r]].
+  exists t'.
+  repeat destruct x; simpl in *.
+  exists p.
+  exists t.
+  exists q.
+  destruct (s0 t' p).
+  simpl in *.
+  exact r.
+Defined.
 
 Lemma refineIfPT'' (cond : S -> bool) (pt : PT) (PThen PElse : Pow S) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in

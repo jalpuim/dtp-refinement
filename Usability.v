@@ -168,3 +168,25 @@ Proof.
   apply (refineTrans (Spec ([ P2 , Q'' ]))); [ | assumption ].
   unfold Q',Q''; apply weakenPre; exact f.
 Defined.
+
+Lemma stepSeqAssocL : forall (w1 w2 w3 : WhileL),
+  { c : WhileL | ((w1 ; w2) ; w3 ⊑ c) /\ isExecutable c } ->
+  { c : WhileL | (w1 ; w2 ; w3 ⊑ c) /\ isExecutable c }.
+Proof.
+  intros w1 w2 w3 [c [H1 H2]].
+  exists c.
+  split; [ | assumption].
+  apply (refineTrans ((w1; w2); w3)); [ | assumption ].
+  apply refineSeqAssocL; apply refineRefl.
+Defined.  
+
+Lemma stepSeqAssocR : forall (w1 w2 w3 : WhileL),
+  { c : WhileL | (w1 ; w2 ; w3 ⊑ c) /\ isExecutable c } ->
+  { c : WhileL | ((w1 ; w2) ; w3 ⊑ c) /\ isExecutable c }.
+Proof.
+  intros w1 w2 w3 [c [H1 H2]].
+  exists c.
+  split; [ | assumption].
+  apply (refineTrans (w1; w2; w3)); [ | assumption ].
+  apply refineSeqAssocR; apply refineRefl.
+Defined.
