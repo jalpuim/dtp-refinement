@@ -6,34 +6,133 @@ Require Import AuxiliaryProofs.
 Require Import Bool.
 Require Import While.
 Require Import Usability.
+Require Import Heap.
+Require Import Coq.FSets.FMapFacts.
 Import While.Language.
 Import While.Semantics.
 
 Module Swap.
 Import Bool.
 
+Lemma add_neq_o : forall m x y (e : val),
+ ~ M.E.eq x y -> M.find y (M.add x e m) = M.find y m.
+Admitted.
+
+Lemma MapsTo_iff : forall m x y (e : Addr.t), M.E.eq x y -> (M.MapsTo x e m <-> M.MapsTo y e m).
+Admitted.
+
+Lemma add_neq_mapsto_iff : forall m x y (e e' : Addr.t),
+ ~ M.E.eq x y -> (M.MapsTo y e' (M.add x e m) <-> M.MapsTo y e' m).
+Admitted.
+
+Lemma find_mapsto_iff : forall m x (e : Addr.t), M.MapsTo x e m <-> M.find x m = Some e.
+Admitted.
+
+Lemma mapsto_find : forall m x (e : Addr.t), M.MapsTo x e m -> M.find x m = Some e.
+Admitted.
+
+Lemma in_find_iff : forall (m : heap) x, M.In x m <-> M.find x m <> None.
+Admitted.
+
+Lemma mem_in_iff : forall (m : heap) (x : Addr.t), M.In x m <-> M.mem x m = true.
+Admitted.
+
+Lemma add_eq_b : forall m x y (e : val),
+ M.E.eq x y -> M.mem y (M.add x e m) = true.
+Admitted.
+
+Lemma add_neq_b : forall m x y (e : val),
+ ~M.E.eq x y -> M.mem y (M.add x e m) = M.mem y m.
+Admitted.
+
+Lemma add_eq_o : forall m x y (e : val),
+ M.E.eq x y -> M.find y (M.add x e m) = Some e.
+Admitted.
+
+Lemma add_in_iff : forall m x y (e : val), M.In y (M.add x e m) <-> M.E.eq x y \/ M.In y m.
+Admitted.
+
+Definition P : Addr.t := Addr.MkAddr 0.
+Definition Q : Addr.t := Addr.MkAddr 1.
+Definition N : Addr.t := Addr.MkAddr 2.
+
+Definition SWAP := 
+  Spec ([ fun s => M.In P s /\ M.In Q s /\ M.In N s
+        , fun s _ s' => find s P = find s' Q
+                     /\ find s Q = find s' P
+                     /\ M.In P s' 
+                     /\ M.In Q s'
+                     /\ M.In N s']). 
+
+(*
 Definition SWAP := Spec ([fun _ => True, fun s _ s' => varP s = varQ s' /\ varP s' = varQ s]).
+*)
 
 Definition swapResult :
   SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N).
 Proof.
   apply (refineTrans
-          (Spec ([fun _ => True , fun s _ s' => varP s = varQ s' /\ varN s' = varQ s]) ; 
+          (Spec ([ fun s => M.In P s /\ M.In Q s /\ M.In N s
+                 , fun s _ s' => find s Q = find s' N
+                              /\ find s P = find s' Q
+                              /\ M.In P s' /\ M.In Q s' /\ M.In N s']) ; 
            P ::= Var N)).
   apply refineFollowAssign.
-  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
+
+  intros s [PinS [QinS NinS]] s' [eq1 [eq2 [PinS' [QinS' NinS']]]].
+  unfold subst; simpl; repeat split.
+  unfold setIdent,getIdent,update,find; rewrite add_neq_o; [ assumption | auto].
+  unfold setIdent,getIdent,update,find; rewrite add_eq_o; unfold find in eq1.
+  rewrite eq1; apply in_find_iff in NinS'.
+  destruct (M.find (elt:=val) N s'); [ | contradict NinS']; trivial.
+  unfold M.E.eq; trivial.
+  
+  unfold setIdent,getIdent,update; rewrite mem_in_iff; apply add_eq_b; unfold M.E.eq; trivial.
+  unfold setIdent,getIdent,update; rewrite <- eq1; rewrite add_in_iff; right; assumption.
+  unfold setIdent,getIdent,update; rewrite add_in_iff; right; assumption.
+  assumption.
+
   apply refineSeqAssocR.
   apply refineSplit; try apply refineRefl.
   apply (refineTrans
-          (Spec ([fun _ => True , fun s _ s' => varP s = varP s' /\ varN s' = varQ s]) ;
-            Q ::= Var P)).
+          (Spec ([ fun s => M.In P s /\ M.In Q s /\ M.In N s
+                 , fun s _ s' => find s P = find s' P 
+                              /\ find s Q = find s' N
+                              /\ M.In P s' /\ M.In Q s' /\ M.In N s']) ; 
+           Q ::= Var P)).
   apply refineFollowAssign.
-  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
+
+  intros s [PinS [QinS NinS]] s' [eq1 [eq2 [PinS' [QinS' NinS']]]].
+  unfold subst; simpl; repeat split.
+  unfold setIdent,getIdent,update,find; rewrite add_neq_o; [ assumption | auto].
+
+  unfold setIdent,getIdent,update,find; rewrite add_eq_o.
+  unfold find in eq1; rewrite eq1; apply in_find_iff in PinS'.
+  destruct (M.find (elt:=val) P s'); [ | contradict PinS']; trivial.  
+  unfold M.E.eq; trivial.
+
+  unfold setIdent,getIdent,update,find; rewrite add_in_iff; right; assumption.
+  unfold setIdent,getIdent,update,find; rewrite add_in_iff; left; unfold M.E.eq; trivial.
+  unfold setIdent,getIdent,update,find; rewrite add_in_iff; right; assumption.
+  assumption.
+
   apply refineSplit; try apply refineRefl.
   apply refineAssign.
-  simpl; intros.
-  destruct s as [N P Q R]; simpl.
-  split; reflexivity.
+  simpl; intros s [PinS [QinS NinS]]. 
+
+  repeat split. 
+  unfold setIdent,getIdent,update,find; rewrite add_neq_o; trivial.
+  unfold N, P, M.E.eq; intros contra; inversion contra.
+
+  unfold setIdent,getIdent,update,find; rewrite add_eq_o; rewrite in_find_iff in QinS.
+  destruct (M.find (elt:=val) Q s); [ | contradict QinS]; trivial.
+
+  unfold M.E.eq; trivial.
+  unfold setIdent,getIdent,update,find; rewrite add_in_iff; right; assumption.
+  unfold setIdent,getIdent,update,find; rewrite add_in_iff; right; assumption.
+  unfold setIdent,getIdent,update,find; rewrite add_in_iff; right; assumption.
+
+  unfold subset; simpl; intros s [PinS [QinS NinS]]; assumption.
 Defined.
 
 End Swap.

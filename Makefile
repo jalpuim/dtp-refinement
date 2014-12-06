@@ -13,11 +13,15 @@ auxproofs: AuxiliaryProofs.vo
 usability: Usability.vo
 exampleverify: ExampleVerify.vo
 example: Example.vo
+heap: Heap.vo
+
+Heap.vo: Heap.v
+	coqc Heap.v
 
 Show.vo: Show.v
 	coqc Show.v
 
-Refinement.vo: Refinement.v
+Refinement.vo: Heap.vo Refinement.v
 	coqc Refinement.v
 
 While.vo: Show.vo Refinement.vo While.v

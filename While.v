@@ -9,6 +9,7 @@ Require Import Heap.
 
 Module Language.
 
+
 (* Expressions *)
 
 Definition Identifier := Addr.t.
@@ -110,9 +111,10 @@ end.
 Fixpoint semantics (w: WhileL) : PT :=
   match w with
   (* FIXME: do we want to return the allocated address here? *)
-  | New x         => Assign_PT (fun (s : S) => setIdent (alloc s) x s)
+  | New x         => Assign_PT (fun s => True) (fun (s : S) => setIdent (alloc s) x s)
   | Skip          => Skip_PT
-  | Assign id exp => Assign_PT (fun s => (setIdent id (evalExpr exp s)) s)
+  | Assign id exp => Assign_PT (fun h => M.In id h) 
+                               (fun s => (setIdent id (evalExpr exp s)) s)
   | Seq st1 st2   => Seq_PT (semantics st1) (semantics st2)
   | If c t e      => If_PT (fun s => (evalBExpr c s)) (semantics t) (semantics e)
   | While inv c b => While_PT inv (fun s => (evalBExpr c s)) (semantics b)
@@ -124,16 +126,16 @@ Definition wrefines w1 w2 := (semantics w1) ⊏ (semantics w2).
 Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity) : type_scope.
 
 Lemma refineAssign (w : WhileL) (id : Identifier) (exp : Expr) 
-  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre ((setIdent id (evalExpr exp s)) s))
-
+  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre ((setIdent id (evalExpr exp s)) s)) (h' : pre (semantics w) ⊂ (fun h => M.In id h))
   : w ⊑ Assign id exp.
   Proof.
     assert (d: pre (semantics w) ⊂ pre (semantics (Assign id exp))); refine_simpl.
     apply (Refinement _ _ d).
-    simpl; intros s pres s' eq; rewrite eq; auto.
+    simpl; intros s pres s' [eq _]; rewrite eq; auto.
   Qed.
 
 (* TODO: law for multiple assignments? *)
+(*
 Lemma refineSeqAssign : forall (id id1 id2 : Identifier) (exp exp1 exp2 : Expr),
   let setEval id exp s := (setIdent id (evalExpr exp s) s) in
   let WAssign := Assign id exp in
@@ -154,6 +156,7 @@ Proof.
   rewrite x1.
   symmetry; apply H.
 Qed.
+*)
 
 Definition subst (id : Identifier) (exp : Expr) (s : S) : S := 
    setIdent id (evalExpr exp s) s.
@@ -162,17 +165,22 @@ Lemma refineFollowAssign (id : Identifier) (exp : Expr) (P : Pow S)
 (Q Q' : forall (s : S), P s -> Pow S) :
   let w  := Spec ([P,Q]) in
   let w' := Spec ([P,Q']) in
-  (forall s pres s', Q' s pres s' -> Q s pres (subst id exp s')) ->
+  (forall s pres s', Q' s pres s' -> prod (Q s pres (subst id exp s')) (M.In id s')) ->
   w ⊑ (w' ; id ::= exp).
 Proof.
   intros w w' HQ.
   set (d := (fun (s : S) (H : P s) => 
+              (exist (fun a => forall t : S, Q' s a t -> M.In id t) H 
+                     (fun t' Ht => snd (HQ s H t' Ht)))) : 
+             pre (semantics w) ⊂ pre (semantics (w' ; id ::= exp))).
+(*
+  set (d := (fun (s : S) (H : P s) => 
               (exist (fun a => forall t : S, Q' s a t -> True) H (fun _ _ => I))) : 
-         pre (semantics w) ⊂ pre (semantics (w' ; id ::= exp))).
+         pre (semantics w) ⊂ pre (semantics (w' ; id ::= exp))).*)
   apply (Refinement _ _ d).
   unfold subset; simpl; intros.
   inversion H as [s' H1].
-  inversion H1 as [H2 H3].
+  inversion H1 as [H2 [H3 H4]].
   rewrite H3.
   apply HQ.  
   assumption.

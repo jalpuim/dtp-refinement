@@ -9,9 +9,7 @@
 Require Import Bool.
 Require Import Heap.
 
-Module R.
-
-Parameter S : Type.
+Definition S := heap.
 
 Definition Pow : Type -> Type := fun a => a -> Prop.
 
@@ -100,30 +98,34 @@ Lemma SkipExtendR (U : Pow S) : U ⊂ extend Skip_PT U.
 
 (*** ASSIGNMENT ***)
 
-Definition Assign_PT : (S -> S) -> PT := fun f =>
-  let assignPre := fun s => True in
-  let assignPost := fun s _ s' => s' = f s in
+Definition Assign_PT : (Pow S) -> (S -> S) -> PT := fun p f =>
+  let assignPre := p in
+  let assignPost := fun s _ s' => prod (s' = f s) (p s') in
   [assignPre , assignPost].
 
 (* Law 1.3 *)
-Lemma refineAssignPT (pt : PT) (f : S -> S) (h : forall (s : S) (pre : pre pt s),  post pt s pre (f s)) 
-  : pt ⊏ Assign_PT f.
+Lemma refineAssignPT (pt : PT) (p : Pow S) (f : S -> S) (h : forall (s : S) (pre : pre pt s),  post pt s pre (f s)) (h' : pre pt ⊂ p)
+  : pt ⊏ Assign_PT p f.
   Proof.
-    assert (d : pre pt ⊂ pre (Assign_PT f)); refine_simpl.
-    eapply (Refinement pt (Assign_PT f) d).
-    simpl; intros s pres s' eq; rewrite eq; auto.
+    assert (d : pre pt ⊂ pre (Assign_PT p f)); refine_simpl.
+    eapply (Refinement pt (Assign_PT p f) d).
+    simpl; intros s pres s' [eq p']; rewrite eq; auto.
   Qed.
 
-Lemma AssignExtendL (U : Pow S) (f : S -> S) (s : S) : extend (Assign_PT f) U s -> U (f s).
+(*
+Lemma AssignExtendL (U : Pow S) (p : Pow S) (f : S -> S) (s : S) 
+  : extend (Assign_PT p f) U s -> U (f s).
   Proof.
-    unfold extend; intros [H1 H2]; apply H2; reflexivity.
+    unfold extend; intros [H1 H2]; apply H2. reflexivity.
   Qed.
 
-Lemma AssignExtendR  (U : Pow S) (f : S -> S) (s : S) : U (f s) -> extend (Assign_PT f) U s.
+
+Lemma AssignExtendR  (U : Pow S) (p : Pow S) (f : S -> S) (s : S) 
+  : U (f s) -> extend (Assign_PT p f) U s.
   Proof.
     intros Ufs; unfold extend; simpl; split; [ trivial | unfold subset; intros s' eq; rewrite eq; now trivial].
   Qed.
-
+*)
 
 (*** SEQUENCING **)
 
@@ -148,6 +150,7 @@ Lemma refineSeqPT (Pre Mid Post : Pow S) :
     refine_simpl; intros s x s' H; destruct H as [t q]; destruct q; auto.
   Qed.
 
+(*
 Lemma refineSeqAssignPT : forall (f: S -> S) (g: S -> S) (h: S -> S),
   (forall (s : S), h s = g (f s)) -> 
   Assign_PT h ⊏ Assign_PT f ;; Assign_PT g.
@@ -163,7 +166,8 @@ Proof.
   intros; inversion H0; inversion H1; rewrite H.
   rewrite <- x1; rewrite <- H2; reflexivity.
 Qed.
-  
+*) 
+ 
 Lemma seqExtendL (pt1 pt2 : PT) (U : Pow S) (s : S) : 
   extend pt1 (extend pt2 U) s -> extend (Seq_PT pt1 pt2) U s.
   Proof.
@@ -479,5 +483,3 @@ Lemma refineIfPT'' (cond : S -> bool) (pt : PT) (PThen PElse : Pow S) :
     unfold subset; intros.
     simpl in *; assumption.
   Qed.
-
-End R.

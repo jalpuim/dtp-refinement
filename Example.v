@@ -6,12 +6,46 @@ Require Import AuxiliaryProofs.
 Require Import Bool.
 Require Import While.
 Require Import Usability.
-Require Import ExampleVerify.
+Require Import Heap.
+(* Require Import ExampleVerify. *)
 Import While.Language.
 Import While.Semantics.
+(*
 Import ExampleVerify.Swap.
 Import ExampleVerify.Definitions.
 Import ExampleVerify.Proof.
+*)
+
+Definition P : Addr.t := Addr.MkAddr 0.
+Definition Q : Addr.t := Addr.MkAddr 1.
+Definition N : Addr.t := Addr.MkAddr 2.
+
+Definition SWAP := 
+  Spec ([ fun s => M.In P s /\ M.In Q s /\ M.In N s
+        , fun s _ s' => find s P = find s' Q
+                     /\ find s Q = find s' P
+                     /\ M.In P s' 
+                     /\ M.In Q s'
+                     /\ M.In N s']). 
+
+Lemma resultSwap : 
+  { c : WhileL | ((SWAP ⊑ c) /\ isExecutable c)}.
+Proof.
+  apply stepFollowAssign with (id := P) (expr := Var N)
+                              (Q' := fun s _ s' =>  find s Q = find s' N
+                              /\ find s P = find s' Q
+                              /\ M.In P s' /\ M.In Q s' /\ M.In N s').
+  intros s [PinS [QinS NinS]] s' [eq1 [eq2 [PinS' [QinS' NinS']]]].
+  repeat split.
+  unfold subst; simpl; unfold setIdent, getIdent, update.
+  simpl.
+  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']. simpl; intros; assumption.  
+  apply stepFollowAssign with (id := Q) (expr := Var P)
+                              (Q' := fun s _ s' => varP s = varP s' /\ varN s' = varQ s).
+  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
+  apply stepAssign with (id := N) (exp := Var Q).
+  simpl; intros; destruct s as [N P Q R]; simpl; split; reflexivity.
+Defined.
 
 Section StepProofs.
 
@@ -169,19 +203,6 @@ Proof.
   apply stepAssign with (id := R) (exp := Var P).
     unfold Inv; simpl; intros s [[H1 [H2 H3]] H4].
     destruct s as [N P Q R]; simpl in *; split; [ apply (elseProof H4) | assumption ].    
-Defined.
-
-Lemma resultSwap : 
-  { c : WhileL | ((SWAP ⊑ c) /\ isExecutable c)}.
-Proof.
-  apply stepFollowAssign with (id := P) (expr := Var N)
-                              (Q' := fun s _ s' => varP s = varQ s' /\ varN s' = varQ s).
-  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.  
-  apply stepFollowAssign with (id := Q) (expr := Var P)
-                              (Q' := fun s _ s' => varP s = varP s' /\ varN s' = varQ s).
-  destruct s as [N P Q R]; destruct s' as [N' P' Q' R']; simpl; intros; assumption.
-  apply stepAssign with (id := N) (exp := Var Q).
-  simpl; intros; destruct s as [N P Q R]; simpl; split; reflexivity.
 Defined.
 
 Definition sqrtCode : WhileL := proj1_sig resultSqrt.

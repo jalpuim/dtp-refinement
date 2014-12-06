@@ -1,6 +1,7 @@
 Require Import Refinement.
 Require Import While.
 Require Import Bool.
+Require Import Heap.
 Import While.Language.
 Import While.Semantics.
 
@@ -51,7 +52,7 @@ Proof.
 Defined.
 
 Lemma stepAssign {w} (id : Identifier) (exp : Expr) 
-  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre ((setIdent id (evalExpr exp s)) s)) :
+  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre ((setIdent id (evalExpr exp s)) s)) (h' : pre (semantics w) ⊂ (fun h => M.In id h)) :
   { c : WhileL | (w ⊑ c) /\ isExecutable c}.
 Proof.
   exists (Assign id exp).
@@ -64,7 +65,7 @@ Lemma stepFollowAssign {P : Pow S} {Q} (id : Identifier) (expr : Expr)
 (Q' : forall (s : S), P s -> Pow S) :
   let w  := Spec ([P,Q]) in
   let w' := Spec ([P,Q']) in
-  (forall s pres s', Q' s pres s' -> Q s pres (subst id expr s')) ->
+  (forall s pres s', Q' s pres s' -> prod (Q s pres (subst id expr s')) (M.In id s')) ->
   {c : WhileL | (w' ⊑ c) /\ isExecutable c } -> 
   {c : WhileL | (w ⊑ c) /\ isExecutable c }.
 Proof.
