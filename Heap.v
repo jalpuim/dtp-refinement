@@ -44,11 +44,11 @@ Module Addr <: OrderedType.
     destruct p as [x]; destruct p' as [y].
     remember (nat_compare x y) as c; destruct c.
     - apply EQ; assert (x = y) by now (apply nat_compare_eq).
-      subst; apply eq_refl.
+      now subst. 
     - apply LT; assert (x < y) by now (apply nat_compare_lt).
-      unfold lt; assumption.
+      now trivial.
     - apply GT; assert (x > y) by now (apply nat_compare_gt).
-      unfold lt; assumption.
+      now trivial.
   Defined.
 
   Definition incr (addr : Addr.t) : Addr.t :=
@@ -87,18 +87,16 @@ End Addr.
 
 Module M := FMapAVL.Make(Addr).
 
-Definition val := nat.
-(* Inductive Dynamic : Type :=
-  | dyn : forall a, a -> Dynamic
-*)
+Inductive Dynamic : Type :=
+  | dyn : forall a, a -> Dynamic.
 
-Definition heap: Type := M.t val.
+Definition heap: Type := M.t Dynamic.
 
 Definition find (h: heap) k := M.find k h.
 
 Definition update (h : heap) k v := M.add k v h.
 
-Definition empty : heap := M.empty nat.
+Definition empty : heap := M.empty Dynamic.
 
 (** Allocation **)
 
@@ -131,7 +129,7 @@ Lemma isLeast (t : heap) : forall a, M.Raw.lt_tree (maxHeap t a) (M.this t).
   - inversion is_bst; subst; simpl in *; intros a. 
     assert (ltM1 : Addr.fromAddr k <= Addr.fromAddr (Addr.max a k)) by apply (Addr.maxProp2 a k).
     assert (ltM2 : Addr.fromAddr (Addr.max a k) < Addr.fromAddr (maxTree this2 (Addr.max a k)))
-        by apply (maxStep (e:=val) {| M.this := this2; M.is_bst := H5 |}).
+        by apply (maxStep (e:=Dynamic) {| M.this := this2; M.is_bst := H5 |}).
     assert (ltM3 : Addr.fromAddr k < Addr.fromAddr (maxTree this2 (Addr.max a k))) by omega.
     apply M.Raw.Proofs.lt_tree_node.
     * apply (M.Raw.Proofs.lt_tree_trans ltM3 H6).

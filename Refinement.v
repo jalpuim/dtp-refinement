@@ -1,10 +1,3 @@
-(* TODO: 
-  - How to deal with allocation of vars? 
-    Maybe its better to handle this from the outset
-  - Total vs partial correctness. Should we worry about the 
-    variant of a while?
-  - How to handle frame rules? What can change and what cannot?
-*)
 
 Require Import Bool.
 Require Import Heap.
@@ -413,21 +406,21 @@ Proof.
   exact H.
 Defined.
 
-Lemma refineSeqAssocL_PT_pre : forall (pt1 pt2 pt3 : PT),
-  pre (pt1 ;; pt2 ;; pt3) ⊂ pre ((pt1;; pt2);; pt3).
-Proof.
-  unfold subset; simpl; intros.
-  destruct H as [H1 H2].
-  exists (exist _ _ (fun (t : S) (post1 : post pt1 s _ t) => match H2 t post1 with
-                                                             exist _ p h => p
-                                                             end)).
-  simpl.
-  intros t [t' [H3 H4]].
-  destruct (H2 t' H3).
-  apply p.
-  exact H4.
-Defined.
-
+(* Lemma refineSeqAssocL_PT_pre : forall (pt1 pt2 pt3 : PT), *)
+(*   pre (pt1 ;; pt2 ;; pt3) ⊂ pre ((pt1;; pt2);; pt3). *)
+(* Proof. *)
+(*   unfold subset; simpl; intros. *)
+(*   destruct H as [H1 H2]. *)
+(*   exists (exist _ _ (fun (t : S) (post1 : post pt1 s _ t) => match H2 t post1 with *)
+(*                                                              exist _ p h => p *)
+(*                                                              end)). *)
+(*   simpl. *)
+(*   intros t [t' [H3 H4]]. *)
+(*   destruct (H2 t' H3). *)
+(*   apply p. *)
+(*   exact H4. *)
+(* Defined. *)
+(*
 Lemma refineSeqAssocL_PT : forall (pt1 pt2 pt3 : PT),
   (pt1 ;; pt2 ;; pt3) ⊏ ((pt1 ;; pt2) ;; pt3).
 Proof.
@@ -436,7 +429,7 @@ Proof.
   refine_simpl.
   intros s x s' H.
   destruct H as [t [[t' [p q]] r]].
-  exists t'.
+n  exists t'.
   repeat destruct x; simpl in *.
   exists p.
   exists t.
@@ -445,7 +438,7 @@ Proof.
   simpl in *.
   exact r.
 Defined.
-
+*)
 Lemma refineIfPT'' (cond : S -> bool) (pt : PT) (PThen PElse : Pow S) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
   let thenBranch := [branchPre PThen

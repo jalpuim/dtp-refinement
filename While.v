@@ -3,123 +3,87 @@ Require Import Bool.
 Require Import String.
 Require Import Arith.Bool_nat.
 Require Import Div2.
-Require Import Show.
-Require Export Refinement.
 Require Import Heap.
-
 Module Language.
 
+Definition Ptr := Addr.t.
+Definition Pow : Type -> Type := fun a => a -> Prop.
+Definition S := heap.
 
-(* Expressions *)
-
-Definition Identifier := Addr.t.
-
-Inductive Expr : Type :=
-  | Var    : Identifier -> Expr
-  | EConst : nat -> Expr
-  | Plus   : Expr -> Expr -> Expr
-  | Minus  : Expr -> Expr -> Expr
-  | Mult   : Expr -> Expr -> Expr
-  | Div2   : Expr -> Expr.
-
-Inductive BExpr : Type :=
-  | BConst : bool -> BExpr
-  | And    : BExpr -> BExpr -> BExpr
-  | Or     : BExpr -> BExpr -> BExpr
-  | Not    : BExpr -> BExpr
-  | Eq     : Expr -> Expr -> BExpr
-  | Lt     : Expr -> Expr -> BExpr
-  | Le     : Expr -> Expr -> BExpr
-  | Gt     : Expr -> Expr -> BExpr
-  | Ge     : Expr -> Expr -> BExpr.
+(* Extended PT to cover the return type  -- now the postcondition refers to the return value also *)
+Inductive PT (a : Type) : Type :=
+  Predicate : forall pre : Pow S, (forall s : S, pre s -> a -> Pow S) -> PT a.
+(* We'll need to update the refinement relation between PTs too... *)
 
 (* While Language *)
 
-Inductive WhileL : Type :=
-  | New    : nat -> WhileL
-  | Skip   : WhileL
-  | Assign : Identifier -> Expr -> WhileL
-  | Seq    : WhileL -> WhileL -> WhileL
-  | If     : BExpr -> WhileL -> WhileL -> WhileL
-  | While  : Pow S -> BExpr -> WhileL -> WhileL
-  | Spec   : PT -> WhileL.
+Inductive WhileL (a : Type) : Type :=
+  | New    : forall v, v -> (Ptr -> WhileL a) -> WhileL a
+  | Read   : forall v, Ptr -> (v -> WhileL a) -> WhileL a
+  | Write : forall v, Ptr -> v -> WhileL a  -> WhileL a
+  | While  : (S -> Prop) -> bool -> WhileL a -> WhileL a (*TODO add variant *)
+  | Spec   : PT a -> WhileL a
+  | Return : a -> WhileL a.
 
-Notation "w1 ; w2" := (Seq w1 w2) (at level 52, right associativity).
-Notation "id ::= exp" := (Assign id exp) (at level 52).
+Notation "id ::= exp" := (Write id exp) (at level 52).
 
-Fixpoint isExecutable (w: WhileL) : Prop :=
-  match w with 
-  | New _         => True
-  | Skip          => True
-  | Assign id exp => True
-  | Seq st1 st2   => (isExecutable st1) /\ (isExecutable st2)
-  | If c t e      => (isExecutable t) /\ (isExecutable e)
-  | While inv c b => isExecutable b
-  | Spec pt       => False
-end.
+Definition trivial : forall a, PT a.
+  intros; refine (Predicate _ (fun s => True) _); intros _ _ _ _; exact True.
+Defined. (*this is a dummy PT -- don't ever use it*)
 
-End Language.
-
-Module Semantics.
-
-Definition setIdent (ident: Addr.t) (n : nat) : heap -> heap :=
-  fun h => update h ident n.
-
-(* FIXME: adapt this so that the precondition of getIdent requires the identifier to already be present in the heap *)
-Definition getIdent (ident: Addr.t) (h : heap) : nat 
-  := match (find h ident) with
-       | None => 0
-       | Some x => x
-     end.
-  (* Alternatively, use these tactics *)
-(* Definition getIdent (ident: Addr.t) (s : S) (h : heap) (H : M.In ident h) : nat *)
-  (* remember (find h ident) as l; destruct l. *)
-  (* - exact v. *)
-  (* - destruct h as [this is_bst]; assert (~ M.Raw.In ident this) by *)
-  (*    now (apply (M.Raw.Proofs.not_find_iff)). *)
-  (*   assert (M.Raw.In ident this) by (now (apply M.Raw.Proofs.In_alt)). *)
-  (*   now exfalso. *)
-  (* Qed. *)
-
-Import Language.
-
-(* Fixpoint pre (e : Expr) (s : heap) : Prop. *)
-
-Fixpoint evalExpr (e: Expr) (s : heap) (*H : pre e s*) : nat :=
-  match e with
-  | Var n     => getIdent n s
-  | EConst n  => n
-  | Plus x y  => evalExpr x s + evalExpr y s
-  | Minus x y => evalExpr x s - evalExpr y s
-  | Mult x y  => evalExpr x s * evalExpr y s
-  | Div2 x    => div2 (evalExpr x s)
-end.
-
-Fixpoint evalBExpr (b: BExpr) (s: heap) : bool :=
-  match b with
-  | BConst b  => b 
-  | And b1 b2 => andb (evalBExpr b1 s) (evalBExpr b2 s) 
-  | Or b1 b2  => orb (evalBExpr b1 s) (evalBExpr b2 s)
-  | Not e     => negb (evalBExpr e s)
-  | Eq e1 e2  => beq_nat (evalExpr e1 s) (evalExpr e2 s)
-  | Lt e1 e2  => proj1_sig (nat_lt_ge_bool (evalExpr e1 s) (evalExpr e2 s))
-  | Le e1 e2  => proj1_sig (nat_le_gt_bool (evalExpr e1 s) (evalExpr e2 s))
-  | Gt e1 e2  => proj1_sig (nat_gt_le_bool (evalExpr e1 s) (evalExpr e2 s))
-  | Ge e1 e2  => proj1_sig (nat_ge_lt_bool (evalExpr e1 s) (evalExpr e2 s))
-end.
-
-Fixpoint semantics (w: WhileL) : PT :=
+Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
   match w with
-  (* FIXME: do we want to return the allocated address here? *)
-  | New x         => Assign_PT (fun s => True) (fun (s : S) => setIdent (alloc s) x s)
-  | Skip          => Skip_PT
+  | Write _ v c => 
+  | _ => trivial _
+  end.
+  | Read
+  | Write
   | Assign id exp => Assign_PT (fun h => M.In id h) 
                                (fun s => (setIdent id (evalExpr exp s)) s)
-  | Seq st1 st2   => Seq_PT (semantics st1) (semantics st2)
-  | If c t e      => If_PT (fun s => (evalBExpr c s)) (semantics t) (semantics e)
   | While inv c b => While_PT inv (fun s => (evalBExpr c s)) (semantics b)
   | Spec pt       => pt
 end.
+
+
+Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : WhileL b.
+  refine (
+  match w with
+  | New _ v c  => New _ _ v (fun p => bind _ _ (c p) k)
+  | Read _ p c => Read _ _ p (fun v => bind _ _ (c v) k)
+  | Write _ p v c => Write _ _ p v (bind _ _ c k)
+  | While Inv cond body => While _ Inv cond (bind _ _ body k)
+  | Spec pt => Spec _ (Predicate _ _ _) 
+      (*hmm I need to think about this branch. It should basically fold
+      the seq rule we had previously into the existing spec 
+      something along the lines of:
+      Given pre : S -> Prop, post : forall s, pre s -> A -> S -> Prop,
+      and k : a -> WhileL b
+      Define a new spec consisting of
+      - the precondition: 
+          (h : pre s) /\ forall s' v, post s h v s' -> preconditionOf (k v)
+      - the postcondition: forall s pres x s'',
+        exists s' y, post s pres x s' /\ postConditionOf (k v) s' y s''
+      where preconditionOf and postConditionOf project out the pre/post of
+      the PT associated with a While by the semantics function above
+       *)
+  | Return x => k x
+  end).
+Admitted.
+  
+(* TODO Add other notations from Ynot, including 'bind' *)
+
+(* Hmm, the isExecutable function now requires an initial heap...
+In the branches for New and Read, we need to check that the 'continuations Ptr -> While and v -> While
+do not produce specs... 
+Fixpoint isExecutable (w: WhileL) : Prop :=
+  match w with 
+  | New _ _         => True
+  | While inv c b => isExecutable b
+  | Spec pt       => False
+end.
+*)
+End Language.
+
 
 Definition wrefines w1 w2 := (semantics w1) ⊏ (semantics w2).
 
@@ -134,29 +98,6 @@ Lemma refineAssign (w : WhileL) (id : Identifier) (exp : Expr)
     simpl; intros s pres s' [eq _]; rewrite eq; auto.
   Qed.
 
-(* TODO: law for multiple assignments? *)
-(*
-Lemma refineSeqAssign : forall (id id1 id2 : Identifier) (exp exp1 exp2 : Expr),
-  let setEval id exp s := (setIdent id (evalExpr exp s) s) in
-  let WAssign := Assign id exp in
-  let WAssignSeq := Assign id1 exp1 ; Assign id2 exp2 in
-  (forall (s : S), setEval id exp s = setEval id2 exp2 (setEval id1 exp1 s)) -> 
-  WAssign ⊑ WAssignSeq.
-Proof.
-  intros.
-  assert (d: pre (semantics (WAssign)) ⊂ pre (semantics (WAssignSeq))). 
-  refine_simpl.
-  intros; apply exist.
-  assumption. 
-  intros; assumption.
-  apply (Refinement _ _ d).
-  simpl in *; unfold subset in *. 
-  intros; inversion H0; inversion H1.
-  rewrite H2.
-  rewrite x1.
-  symmetry; apply H.
-Qed.
-*)
 
 Definition subst (id : Identifier) (exp : Expr) (s : S) : S := 
    setIdent id (evalExpr exp s) s.
