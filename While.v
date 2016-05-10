@@ -15,7 +15,7 @@ Inductive PT (a : Type) : Type :=
   Predicate : forall pre : Pow S, (forall s : S, pre s -> a -> Pow S) -> PT a.
 (* We'll need to update the refinement relation between PTs too... *)
 
-(* While Language *)
+(* While Language -- now monadic*)
 
 Inductive WhileL (a : Type) : Type :=
   | New    : forall v, v -> (Ptr -> WhileL a) -> WhileL a
@@ -30,20 +30,6 @@ Notation "id ::= exp" := (Write id exp) (at level 52).
 Definition trivial : forall a, PT a.
   intros; refine (Predicate _ (fun s => True) _); intros _ _ _ _; exact True.
 Defined. (*this is a dummy PT -- don't ever use it*)
-
-Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
-  match w with
-  | Write _ v c => 
-  | _ => trivial _
-  end.
-  | Read
-  | Write
-  | Assign id exp => Assign_PT (fun h => M.In id h) 
-                               (fun s => (setIdent id (evalExpr exp s)) s)
-  | While inv c b => While_PT inv (fun s => (evalBExpr c s)) (semantics b)
-  | Spec pt       => pt
-end.
-
 
 Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : WhileL b.
   refine (
@@ -69,6 +55,23 @@ Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : While
   | Return x => k x
   end).
 Admitted.
+
+(* Also a bit tricky, but not impossible I think.
+The hard part is rolling the 'continuation' into the PTs... *)
+Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
+  match w with
+  | Write _ _ v c => trivial _
+  | _ => trivial _
+  end.
+(*  | Read
+  | Write
+  | Assign id exp => Assign_PT (fun h => M.In id h) 
+                               (fun s => (setIdent id (evalExpr exp s)) s)
+  | While inv c b => While_PT inv (fun s => (evalBExpr c s)) (semantics b)
+  | Spec pt       => pt
+end.*)
+
+
   
 (* TODO Add other notations from Ynot, including 'bind' *)
 
@@ -84,6 +87,7 @@ end.
 *)
 End Language.
 
+(* Wouter: I gotten to about here in the revision... *)
 
 Definition wrefines w1 w2 := (semantics w1) ⊏ (semantics w2).
 
