@@ -173,7 +173,7 @@ Lemma seqExtendL (pt1 pt2 : PT) (U : Pow S) (s : S) :
   Proof.
     refine_simpl.
     intro H; destruct H as [pres posts].
-    exists (existT (fun pres => forall t, post pt1 s pres t -> pre pt2 t) pres 
+    exists (exist (fun pres => forall t, post pt1 s pres t -> pre pt2 t) pres 
              (fun t pt => projT1 (posts t pt))).
     unfold subset in *; simpl.
     intros s' H; destruct H as [s'' q]; destruct q as [H1 H2].
@@ -212,7 +212,6 @@ Definition If_PT (cond : S -> bool) (Then Else : PT) : PT :=
 Lemma refineIfPT' (cond : S -> bool) (pt : PT) :
   pt ⊏ If_PT cond pt pt.
   Proof.
-    Print Refinement.
     set (d (s : S) (X : pre pt s) := 
       (fun H : Is_true (cond s) => X, fun H : Is_false (cond s) => X)).
     apply (Refinement pt (If_PT cond pt pt) d).
@@ -336,7 +335,7 @@ Definition refineSplitPT (pt1 pt2 pt3 pt4 : PT) :
   (pt1 ⊏ pt3) -> (pt2 ⊏ pt4) -> (pt1 ;; pt2) ⊏ (pt3 ;; pt4).
     intros  [d1 f1] [d2 f2].
     set (d (s : S) (pres : pre (pt1;; pt2) s) :=
-          existT (fun pres0 : pre pt3 s => forall t : S, post pt3 s pres0 t -> pre pt4 t)
+          exist (fun pres0 : pre pt3 s => forall t : S, post pt3 s pres0 t -> pre pt4 t)
           (d1 s (proj1_sig pres))
           (fun (t : S) (post2 : post pt3 s (d1 s (proj1_sig pres)) t) =>
             d2 t (proj2_sig pres t (f1 s (proj1_sig pres) t post2))) : pre (pt3;;pt4) s 
@@ -420,7 +419,7 @@ Proof.
   unfold subset; simpl; intros.
   destruct H as [H1 H2].
   exists (exist _ _ (fun (t : S) (post1 : post pt1 s _ t) => match H2 t post1 with
-                                                             exist p h => p
+                                                             exist _ p h => p
                                                              end)).
   simpl.
   intros t [t' [H3 H4]].

@@ -38,7 +38,7 @@ Qed.
 
 Program Fixpoint print_nat (x : nat) { measure x } : string :=
  match eucl_dev 10 _ x with
-   | divex q r H1 H2 =>
+   | divex _ _ q r H1 H2 =>
      match q with
        | 0 => print_digit r
        | S _ => print_nat q ++ print_digit r
