@@ -4,16 +4,10 @@ Require Import String.
 Require Import Arith.Bool_nat.
 Require Import Div2.
 Require Import Heap.
+Require Import RefinementNew.
 Module Language.
 
 Definition Ptr := Addr.t.
-Definition Pow : Type -> Type := fun a => a -> Prop.
-Definition S := heap.
-
-(* Extended PT to cover the return type  -- now the postcondition refers to the return value also *)
-Inductive PT (a : Type) : Type :=
-  Predicate : forall pre : Pow S, (forall s : S, pre s -> a -> Pow S) -> PT a.
-(* We'll need to update the refinement relation between PTs too... *)
 
 (* While Language -- now monadic*)
 
@@ -31,14 +25,50 @@ Definition trivial : forall a, PT a.
   intros; refine (Predicate _ (fun s => True) _); intros _ _ _ _; exact True.
 Defined. (*this is a dummy PT -- don't ever use it*)
 
+(* Also a bit tricky, but not impossible I think.
+The hard part is rolling the 'continuation' into the PTs... *)
+(* Joao: do we need new predicates in RefinementNew? *)
+Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
+  match w with
+    | New _ _ v k => trivial _ (* assert that "inner" Ptr is now referenced? *)
+    | Read _ _ ptr k => trivial _
+    | Write _ _ ptr v k => (* using "old" Seq here *)
+      Seq_PT (Assign_PT (fun h => M.In ptr h) (fun s => (update s ptr (dyn _ v))))
+             (semantics k)            
+    | While _ inv c body => trivial _
+    | Spec _ s => trivial _
+    | _ => trivial _
+  end.
+(*  | Read
+  | Write
+  | Assign id exp => Assign_PT (fun h => M.In id h) 
+                               (fun s => (setIdent id (evalExpr exp s)) s)
+  | While inv c b => While_PT inv (fun s => (evalBExpr c s)) (semantics b)
+  | Spec pt       => pt
+end.*)
+
+Definition preConditionOf {a : Type} (w : WhileL a) : Pow S :=
+  match semantics w with
+    | Predicate _ p _ => p
+  end.
+
+(* Joao: we probably need to finish semantics here *)
+Definition postConditionOf {a : Type} (w : WhileL a)
+: (forall s : S, preConditionOf w s -> Pow S).
+  refine(
+  match semantics w return (forall s : S, preConditionOf w s -> Pow S) with
+    | Predicate _ pre post => _
+  end).
+Admitted.
+
 Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : WhileL b.
   refine (
   match w with
-  | New _ v c  => New _ _ v (fun p => bind _ _ (c p) k)
-  | Read _ p c => Read _ _ p (fun v => bind _ _ (c v) k)
-  | Write _ p v c => Write _ _ p v (bind _ _ c k)
-  | While Inv cond body => While _ Inv cond (bind _ _ body k)
-  | Spec pt => Spec _ (Predicate _ _ _) 
+  | New _ _ v c  => New _ _ v (fun p => bind _ _ (c p) k)
+  | Read _ _ p c => Read _ _ p (fun v => bind _ _ (c v) k)
+  | Write _ _ p v c => Write _ _ p v (bind _ _ c k)
+  | While _ Inv cond body => While _ Inv cond (bind _ _ body k)
+  | Spec _ pt => Spec _ _
       (*hmm I need to think about this branch. It should basically fold
       the seq rule we had previously into the existing spec 
       something along the lines of:
@@ -52,42 +82,39 @@ Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : While
       where preconditionOf and postConditionOf project out the pre/post of
       the PT associated with a While by the semantics function above
        *)
-  | Return x => k x
+  | Return _ x => k x
   end).
+  destruct pt as [pre post].
+  simple refine (Predicate _ (fun s => _) _).
+  refine (forall (h : pre s) s' v, post s h v s' -> preConditionOf (k v) s).
+  (*
+  refine (forall v s pres x s'', exists s' y, post s pres x s' /\ postConditionOf (k v) s' y s'').
+  *)  
 Admitted.
 
-(* Also a bit tricky, but not impossible I think.
-The hard part is rolling the 'continuation' into the PTs... *)
-Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
-  match w with
-  | Write _ _ v c => trivial _
-  | _ => trivial _
-  end.
-(*  | Read
-  | Write
-  | Assign id exp => Assign_PT (fun h => M.In id h) 
-                               (fun s => (setIdent id (evalExpr exp s)) s)
-  | While inv c b => While_PT inv (fun s => (evalBExpr c s)) (semantics b)
-  | Spec pt       => pt
-end.*)
 
 
   
 (* TODO Add other notations from Ynot, including 'bind' *)
 
-(* Hmm, the isExecutable function now requires an initial heap...
+(* Wouter: Hmm, the isExecutable function now requires an initial heap...
 In the branches for New and Read, we need to check that the 'continuations Ptr -> While and v -> While
-do not produce specs... 
-Fixpoint isExecutable (w: WhileL) : Prop :=
+do not produce specs... *)
+(* Joao: is this an acceptable definition? *)
+
+Fixpoint isExecutable {a : Type} (w: WhileL a) : Prop :=
   match w with 
-  | New _ _         => True
-  | While inv c b => isExecutable b
-  | Spec pt       => False
-end.
-*)
+    | New _ _ _ k     => forall ptr, isExecutable (k ptr)
+    | Read _ _ _ k    => forall v, isExecutable (k v)
+    | Write _ _ _ _ w => isExecutable w
+    | While _ inv c b => isExecutable b
+    | Spec _ pt       => False
+    | Return _ a      => True
+  end.
 End Language.
 
 (* Wouter: I gotten to about here in the revision... *)
+(* Joao: looks like we'll need to finish RefinementNew first *)
 
 Definition wrefines w1 w2 := (semantics w1) ⊏ (semantics w2).
 

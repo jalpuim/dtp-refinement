@@ -102,14 +102,20 @@ Definition empty : heap := M.empty Dynamic.
 
 Fixpoint maxTree {e : Type} (t : M.Raw.tree e) (a : Addr.t) : Addr.t :=
   match t with
-    | M.Raw.Leaf => Addr.incr a
+    | M.Raw.Leaf _ => Addr.incr a
     | M.Raw.Node l y e r h => maxTree r (Addr.max a y)
   end.
 
+Definition maxHeap (h : heap) (a : Addr.t) : Addr.t.
+  destruct h. apply (maxTree this a).
+Defined.
+
+(*
 Definition maxHeap (h : heap) (a : Addr.t) :=
   match h with
-   | {| M.this := t; M.is_bst := is_bst |} => maxTree t a
+   | {| M.this := t|} => maxTree t a
   end.
+*)
 
 Definition alloc (h : heap) : Addr.t := maxHeap h (Addr.MkAddr 0).
 
@@ -134,7 +140,7 @@ Lemma isLeast (t : heap) : forall a, M.Raw.lt_tree (maxHeap t a) (M.this t).
     apply M.Raw.Proofs.lt_tree_node.
     * apply (M.Raw.Proofs.lt_tree_trans ltM3 H6).
     * now apply IHthis2.
-    * assumption.
+    * assumption. 
   Qed.
     
 Lemma allocFresh (h : heap) : ~ M.In (alloc h) h.
