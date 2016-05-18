@@ -101,7 +101,7 @@ Admitted.
 In the branches for New and Read, we need to check that the 'continuations Ptr -> While and v -> While
 do not produce specs... *)
 (* Joao: is this an acceptable definition? *)
-
+(* Wouter: Yep! Looks good to me *)
 Fixpoint isExecutable {a : Type} (w: WhileL a) : Prop :=
   match w with 
     | New _ _ _ k     => forall ptr, isExecutable (k ptr)

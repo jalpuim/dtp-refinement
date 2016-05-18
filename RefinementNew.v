@@ -34,8 +34,13 @@ Inductive Refines {a : Type} (pt1 pt2 : PT a) : Type :=
       (forall (s : S) (x : pre pt1 s) v, post pt2 s (d s x) v ⊂ post pt1 s x v) -> Refines pt1 pt2.
 
 (* Joao: please double-check this definition *)
-Definition extend {a : Type} (v : a) (pt : PT a) (U : Pow S) : Pow S := 
-  fun s => { p : pre pt s & post pt s p v ⊂ U}.
+(* Wouter: It's OK I think. The question is where you quantify the v. 
+I'd expect a predicate transformer on Pow (A*S) -> Pow (A*S)
+Does that make sense?
+*) 
+
+Definition extend {a : Type} (pt : PT a) (v : a) (U : Pow S) : Pow S
+  := fun s => { p : pre pt s & post pt s p v ⊂ U}.
 
 Notation "PT1 ⊏ PT2" := (Refines PT1 PT2) (at level 90, no associativity) : type_scope.
 
