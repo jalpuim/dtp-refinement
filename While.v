@@ -21,45 +21,52 @@ Inductive WhileL (a : Type) : Type :=
 
 Notation "id ::= exp" := (Write id exp) (at level 52).
 
-Definition trivial : forall a, PT a.
-  intros; refine (Predicate _ (fun s => True) _); intros _ _ _ _; exact True.
-Defined. (*this is a dummy PT -- don't ever use it*)
 
-(* Also a bit tricky, but not impossible I think.
-The hard part is rolling the 'continuation' into the PTs... *)
-(* Joao: do we need new predicates in RefinementNew? *)
+Definition NewPT {a : Type} (x : a) : PT Ptr :=              
+  Predicate _ (fun s => True) (* trivial precondition *)
+              (fun s _ p s' => (* given initial state s, result pointer p, and final state s' *)
+                 (forall p', p' <> p -> find s p = find s' p') (* all existing addresses are unmodified *)
+                 /\ find s' p = Some (dyn _ x)). (* and the heap now lets p point to x *)
+
+Definition ReadPT {a : Type} (ptr : Ptr) : PT a :=
+  Predicate _ (fun s => exists v, find s ptr = Some (dyn a v)) (* if there is a value for the ptr *)
+              (fun s pres v s' => s = s' /\ find s ptr = Some (dyn a v)). (* we need to return this value and leave the heap untouched *)
+                   (* The postcondition here is slightly crappy -- any ideas? We can't project from the exists as it is in Prop *)
+
+(* Joao: this definition is incomplete...
+   I'm slightly doubting whether or not it is going to work in the first place -- 
+   the bool is necessary a constant that does not depend on the state.
+   Perhaps having a condition: Heap -> bool is better?
+ *)
+Definition WhilePT {a : Type} (inv : S -> Prop) (b : bool) : PT a :=
+  Predicate _ (fun s => inv s 
+                 (* /\ forall t, b /\ inv t -> precondition of body
+                    /\ forall t t', b /\ I t /\ post body t t' -> inv t *)
+              )
+              (fun s pres _ s' => inv s'). (* /\ not b *)
+
 Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
   match w with
-    | New _ _ v k => trivial _ (* assert that "inner" Ptr is now referenced? *)
-    | Read _ _ ptr k => trivial _
+    | New _ _ v k => Bind_PT (NewPT v) (fun p => semantics (k p))
+    | Read _ _ ptr k => Bind_PT (ReadPT ptr) (fun v => semantics (k v))
     | Write _ _ ptr v k => (* using "old" Seq here *)
       Seq_PT (Assign_PT (fun h => M.In ptr h) (fun s => (update s ptr (dyn _ v))))
              (semantics k)            
-    | While _ inv c body => trivial _
-    | Spec _ s => trivial _
-    | _ => trivial _
+    | While _ inv c body => Seq_PT (WhilePT inv c) (semantics body)
+    | Spec _ s => s
+    | Return _ x => Predicate _ (fun s => True) (fun s _ v s' => s = s' /\ v = x)
   end.
-(*  | Read
-  | Write
-  | Assign id exp => Assign_PT (fun h => M.In id h) 
-                               (fun s => (setIdent id (evalExpr exp s)) s)
-  | While inv c b => While_PT inv (fun s => (evalBExpr c s)) (semantics b)
-  | Spec pt       => pt
-end.*)
 
 Definition preConditionOf {a : Type} (w : WhileL a) : Pow S :=
   match semantics w with
     | Predicate _ p _ => p
   end.
 
-(* Joao: we probably need to finish semantics here *)
 Definition postConditionOf {a : Type} (w : WhileL a)
-: (forall s : S, preConditionOf w s -> Pow S).
-  refine(
-  match semantics w return (forall s : S, preConditionOf w s -> Pow S) with
-    | Predicate _ pre post => _
-  end).
-Admitted.
+  : (forall s : S, preConditionOf w s -> a -> Pow S) :=
+  match semantics w as x return (forall s : S, match x with | [p, _] => p end s -> a -> Pow S) with
+    | [pre, post] => post
+  end.
 
 Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : WhileL b.
   refine (
@@ -85,23 +92,14 @@ Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : While
   | Return _ x => k x
   end).
   destruct pt as [pre post].
-  simple refine (Predicate _ (fun s => _) _).
-  refine (forall (h : pre s) s' v, post s h v s' -> preConditionOf (k v) s).
-  (*
-  refine (forall v s pres x s'', exists s' y, post s pres x s' /\ postConditionOf (k v) s' y s'').
-  *)  
-Admitted.
+  refine (Predicate _ (fun s => {h : pre s | forall s' v, post s h v s' -> preConditionOf (k v) s'}) _).
+  intros s h y s''.
+  refine (exists s' x, {p : post s (proj1_sig h) x s' | postConditionOf (k x) s' _ y s''}).
+  refine ((proj2_sig h) s' x _).
+  exact p.
+  Defined.
+Print bind.
 
-
-
-  
-(* TODO Add other notations from Ynot, including 'bind' *)
-
-(* Wouter: Hmm, the isExecutable function now requires an initial heap...
-In the branches for New and Read, we need to check that the 'continuations Ptr -> While and v -> While
-do not produce specs... *)
-(* Joao: is this an acceptable definition? *)
-(* Wouter: Yep! Looks good to me *)
 Fixpoint isExecutable {a : Type} (w: WhileL a) : Prop :=
   match w with 
     | New _ _ _ k     => forall ptr, isExecutable (k ptr)
@@ -112,9 +110,6 @@ Fixpoint isExecutable {a : Type} (w: WhileL a) : Prop :=
     | Return _ a      => True
   end.
 End Language.
-
-(* Wouter: I gotten to about here in the revision... *)
-(* Joao: looks like we'll need to finish RefinementNew first *)
 
 Definition wrefines w1 w2 := (semantics w1) ⊏ (semantics w2).
 

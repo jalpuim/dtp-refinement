@@ -85,6 +85,7 @@ Lemma refineSkip {a : Type} (pt : PT a) :
     simpl subset; intros s pres s' v eq; rewrite <- eq; auto.
   Qed.
 
+(*
 Lemma SkipExtendL {a : Type} (v : a) (U : Pow S) : extend v Skip_PT U ⊂ U.
   Proof.
     unfold extend; simpl subset; intros s [P1 P2]; apply P2; auto.
@@ -94,7 +95,7 @@ Lemma SkipExtendR {a : Type} (v : a) (U : Pow S) : U ⊂ extend v Skip_PT U.
   Proof.
     unfold extend, subset; intros s Us; simpl; split; [trivial | intros s' eq; rewrite <- eq; now trivial].
   Qed.
-
+*)
 (*** ASSIGNMENT ***)
 
 Definition Assign_PT {a : Type} : (Pow S) -> (S -> S) -> PT a := fun p f =>
@@ -122,6 +123,15 @@ Definition Seq_PT {a : Type} (pt1 pt2 : PT a) : PT a :=
 
 Notation "pt1 ;; pt2" := (Seq_PT pt1 pt2) (at level 52, right associativity).
 
+
+Definition Bind_PT {a b : Type} (pt1 : PT a) (pt2 : a -> PT b) : PT b :=
+  let seqPre := fun s => {pres : pre pt1 s | forall t v, post pt1 s pres v t -> pre (pt2 v) t} in
+  let seqPost : forall s : S, seqPre s -> b -> Pow S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) => 
+    exists t : S, exists x, exists q : post pt1 s (proj1_sig pres) x t, post (pt2 x) t (proj2_sig pres t x q) v s'
+  in
+  [seqPre , seqPost].
+
+
 (* Law 4.2 *)
 Lemma refineSeqPT {a : Type} (Pre Mid Post : Pow S) :
   let pt := [ Pre , fun _ _ v s' => Post s' ] in
@@ -133,3 +143,4 @@ Lemma refineSeqPT {a : Type} (Pre Mid Post : Pow S) :
     eapply (Refinement _ _ d).
     refine_simpl; intros s x v s' H; destruct H as [t [v' q]]; destruct q; auto.
 Qed.
+
