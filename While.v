@@ -15,13 +15,13 @@ Inductive WhileL (a : Type) : Type :=
   | New    : forall v, v -> (Ptr -> WhileL a) -> WhileL a
   | Read   : forall v, Ptr -> (v -> WhileL a) -> WhileL a
   | Write : forall v, Ptr -> v -> WhileL a  -> WhileL a
-  | While  : (S -> Prop) -> bool -> WhileL a -> WhileL a (*TODO add variant *)
+  | While  : (S -> Prop) -> (S -> bool) -> WhileL a -> WhileL a (*TODO add variant *)
   | Spec   : PT a -> WhileL a
   | Return : a -> WhileL a.
 
 Notation "id ::= exp" := (Write id exp) (at level 52).
 
-
+(* Joao: is this strong enough? or should we add to the post-condition "find s p = None" ? *)
 Definition NewPT {a : Type} (x : a) : PT Ptr :=              
   Predicate _ (fun s => True) (* trivial precondition *)
               (fun s _ p s' => (* given initial state s, result pointer p, and final state s' *)
@@ -31,28 +31,46 @@ Definition NewPT {a : Type} (x : a) : PT Ptr :=
 Definition ReadPT {a : Type} (ptr : Ptr) : PT a :=
   Predicate _ (fun s => exists v, find s ptr = Some (dyn a v)) (* if there is a value for the ptr *)
               (fun s pres v s' => s = s' /\ find s ptr = Some (dyn a v)). (* we need to return this value and leave the heap untouched *)
-                   (* The postcondition here is slightly crappy -- any ideas? We can't project from the exists as it is in Prop *)
+(* The postcondition here is slightly crappy -- any ideas? We can't project from the exists as it is in Prop *)
+(* Joao: Not really. Unless we change PT def with a precondition like S -> (Prop,a). *)
 
-(* Joao: this definition is incomplete...
-   I'm slightly doubting whether or not it is going to work in the first place -- 
+(* I'm slightly doubting whether or not it is going to work in the first place -- 
    the bool is necessary a constant that does not depend on the state.
-   Perhaps having a condition: Heap -> bool is better?
- *)
-Definition WhilePT {a : Type} (inv : S -> Prop) (b : bool) : PT a :=
+   Perhaps having a condition: Heap -> bool is better? *)
+(* Joao: I think so. what about using While_PT instead? (defined below, based on our old definition  *)
+Definition WhilePT {a : Type} (inv : Pow S) (b : S -> bool) : PT a :=
   Predicate _ (fun s => inv s 
                  (* /\ forall t, b /\ inv t -> precondition of body
                     /\ forall t t', b /\ I t /\ post body t t' -> inv t *)
               )
               (fun s pres _ s' => inv s'). (* /\ not b *)
 
+Definition Is_false (b : bool) :=
+  match b with
+    | true => False
+    | false => True
+  end.
+
+Definition While_PT {a : Type} (inv : Pow S) (cond : S -> bool) (body : PT a) : PT a :=
+  let whilePre := (fun s =>   (* The invariant should hold initially *)
+                             inv s /\ 
+                              (* If we enter the loop, the precondition of the body should hold *)
+                            { H : (forall s, Is_true (cond s) /\ inv s -> pre body s) &
+                              (* The loop body should preserve the invariant *)
+                            (forall s v s' (t : Is_true (cond s) /\ inv s), post body s (H s t) v s' -> inv s')})                          
+  in
+  let whilePost := (fun _ _ _ s' => inv s' /\ Is_false (cond s')) in
+  [ whilePre , whilePost ].
+
 Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
   match w with
     | New _ _ v k => Bind_PT (NewPT v) (fun p => semantics (k p))
     | Read _ _ ptr k => Bind_PT (ReadPT ptr) (fun v => semantics (k v))
-    | Write _ _ ptr v k => (* using "old" Seq here *)
+    | Write _ _ ptr v k => 
       Seq_PT (Assign_PT (fun h => M.In ptr h) (fun s => (update s ptr (dyn _ v))))
              (semantics k)            
-    | While _ inv c body => Seq_PT (WhilePT inv c) (semantics body)
+    | While _ inv c body => While_PT inv c (semantics body)
+    (* Seq_PT (WhilePT inv c) (semantics body) *)
     | Spec _ s => s
     | Return _ x => Predicate _ (fun s => True) (fun s _ v s' => s = s' /\ v = x)
   end.

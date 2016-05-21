@@ -7,7 +7,11 @@ Definition Pow : Type -> Type := fun a => a -> Prop.
 
 Definition K : forall {A} {a : Type}, Pow S -> (forall s:S, A s -> a -> Pow S) := fun a _ pt _ _ _ s => pt s.
 
+Definition Ka : forall {A} {a : Type}, (a -> Pow S) -> (forall s:S, A s -> a -> Pow S) := fun _ _ pt _ _ a s => pt a s.
+
 Implicit Arguments K [A].
+
+Implicit Arguments Ka [A].
 
 Definition subset : Pow S -> Pow S -> Prop :=
   fun P1 P2 => forall s, P1 s -> P2 s.
@@ -123,7 +127,6 @@ Definition Seq_PT {a : Type} (pt1 pt2 : PT a) : PT a :=
 
 Notation "pt1 ;; pt2" := (Seq_PT pt1 pt2) (at level 52, right associativity).
 
-
 Definition Bind_PT {a b : Type} (pt1 : PT a) (pt2 : a -> PT b) : PT b :=
   let seqPre := fun s => {pres : pre pt1 s | forall t v, post pt1 s pres v t -> pre (pt2 v) t} in
   let seqPost : forall s : S, seqPre s -> b -> Pow S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) => 
@@ -131,6 +134,9 @@ Definition Bind_PT {a b : Type} (pt1 : PT a) (pt2 : a -> PT b) : PT b :=
   in
   [seqPre , seqPost].
 
+(* 
+Notation "pt1 ⟫= pt2" := (Seq_PT pt1 pt2) (at level 52, right associativity).
+*)
 
 (* Law 4.2 *)
 Lemma refineSeqPT {a : Type} (Pre Mid Post : Pow S) :
@@ -144,3 +150,15 @@ Lemma refineSeqPT {a : Type} (Pre Mid Post : Pow S) :
     refine_simpl; intros s x v s' H; destruct H as [t [v' q]]; destruct q; auto.
 Qed.
 
+(* Joao: does this look good? *)
+Lemma refineBindPT {a : Type} (Pre : Pow S) (Mid Post : a -> Pow S) :
+  let pt := [ Pre , fun _ _ v s' => Post v s' ] in
+  pt ⊏ Bind_PT ([Pre , (fun _ _ v s' => Mid v s') ]) (fun a => [ Mid a , (fun _ _ v s' => Post v s') ]).
+  Proof.
+    refine_simpl.
+    assert (d : pre (Predicate _ Pre (Ka _ Post)) ⊂ pre (Bind_PT ([Pre, Ka _ Mid])
+       (fun v => [Mid v, Ka _ Post]))); refine_simpl.
+    intros s pres; exists pres; auto.
+    eapply (Refinement _ _ d).
+    refine_simpl; intros s x v s' H; destruct H as [t [v' q]]; destruct q; auto.
+Qed.
