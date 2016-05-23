@@ -22,6 +22,7 @@ Inductive WhileL (a : Type) : Type :=
 Notation "id ::= exp" := (Write id exp) (at level 52).
 
 (* Joao: is this strong enough? or should we add to the post-condition "find s p = None" ? *)
+(* Wouter: we could add this... but that would only be useful if we wanted to access unallocated memory... *)
 Definition NewPT {a : Type} (x : a) : PT Ptr :=              
   Predicate _ (fun s => True) (* trivial precondition *)
               (fun s _ p s' => (* given initial state s, result pointer p, and final state s' *)
@@ -38,13 +39,7 @@ Definition ReadPT {a : Type} (ptr : Ptr) : PT a :=
    the bool is necessary a constant that does not depend on the state.
    Perhaps having a condition: Heap -> bool is better? *)
 (* Joao: I think so. what about using While_PT instead? (defined below, based on our old definition  *)
-Definition WhilePT {a : Type} (inv : Pow S) (b : S -> bool) : PT a :=
-  Predicate _ (fun s => inv s 
-                 (* /\ forall t, b /\ inv t -> precondition of body
-                    /\ forall t t', b /\ I t /\ post body t t' -> inv t *)
-              )
-              (fun s pres _ s' => inv s'). (* /\ not b *)
-
+(* Wouter: Yes, let's use this While_PT *)
 Definition Is_false (b : bool) :=
   match b with
     | true => False
@@ -86,37 +81,27 @@ Definition postConditionOf {a : Type} (w : WhileL a)
     | [pre, post] => post
   end.
 
-Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : WhileL b.
-  refine (
+Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : WhileL b :=
   match w with
-  | New _ _ v c  => New _ _ v (fun p => bind _ _ (c p) k)
-  | Read _ _ p c => Read _ _ p (fun v => bind _ _ (c v) k)
-  | Write _ _ p v c => Write _ _ p v (bind _ _ c k)
-  | While _ Inv cond body => While _ Inv cond (bind _ _ body k)
-  | Spec _ pt => Spec _ _
-      (*hmm I need to think about this branch. It should basically fold
-      the seq rule we had previously into the existing spec 
-      something along the lines of:
-      Given pre : S -> Prop, post : forall s, pre s -> A -> S -> Prop,
-      and k : a -> WhileL b
-      Define a new spec consisting of
-      - the precondition: 
-          (h : pre s) /\ forall s' v, post s h v s' -> preconditionOf (k v)
-      - the postcondition: forall s pres x s'',
-        exists s' y, post s pres x s' /\ postConditionOf (k v) s' y s''
-      where preconditionOf and postConditionOf project out the pre/post of
-      the PT associated with a While by the semantics function above
-       *)
+  | New _ _ v c  => New _ _ v (fun p => bind (c p) k)
+  | Read _ _ p c => Read _ _ p (fun v => bind (c v) k)
+  | Write _ _ p v c => Write _ _ p v (bind c k)
+  | While _ Inv cond body => While _ Inv cond (bind body k)
+  | Spec _ pt => Spec _
+        match pt with
+        | [pre, post] =>
+            [fun s : S => {h : pre s | forall (s' : S) (v : a), post s h v s' -> preConditionOf (k v) s'},
+            fun (s : S)
+              (h : {h : pre s |
+                     forall (s' : S) (v : a),
+                       post s h v s' -> preConditionOf (k v) s'}) 
+              (y : b) (s'' : S) =>
+            exists (s' : S) (x : a),
+              {p : post s (proj1_sig h) x s' |
+              postConditionOf (k x) s' (proj2_sig h s' x p) y s''}]
+        end
   | Return _ x => k x
-  end).
-  destruct pt as [pre post].
-  refine (Predicate _ (fun s => {h : pre s | forall s' v, post s h v s' -> preConditionOf (k v) s'}) _).
-  intros s h y s''.
-  refine (exists s' x, {p : post s (proj1_sig h) x s' | postConditionOf (k x) s' _ y s''}).
-  refine ((proj2_sig h) s' x _).
-  exact p.
-  Defined.
-Print bind.
+  end.
 
 Fixpoint isExecutable {a : Type} (w: WhileL a) : Prop :=
   match w with 
@@ -127,11 +112,12 @@ Fixpoint isExecutable {a : Type} (w: WhileL a) : Prop :=
     | Spec _ pt       => False
     | Return _ a      => True
   end.
-End Language.
 
-Definition wrefines w1 w2 := (semantics w1) ⊏ (semantics w2).
+Definition wrefines {a : Type} (w1 w2 : WhileL a) := (semantics w1) ⊏ (semantics w2).
 
 Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity) : type_scope.
+
+(* Wouter: Do you want to finish these definitions? *)
 
 Lemma refineAssign (w : WhileL) (id : Identifier) (exp : Expr) 
   (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre ((setIdent id (evalExpr exp s)) s)) (h' : pre (semantics w) ⊂ (fun h => M.In id h))
