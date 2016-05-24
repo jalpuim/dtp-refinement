@@ -226,6 +226,10 @@ Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
     destruct (semantics w); now eapply h.
   Qed.
 
+Ltac refine_assign ptr x := eapply (refineAssign _ ptr x _ _).
+(* Wouter: this is a first approximation of this tactic, it probably needs to do quite a bit more... *)
+
+
 (* Joao: (TODO) still missing the refinement rules for Read/Write/New/Return
 
 Lemma refineSeqAssocR : forall (w w1 w2 w3 : WhileL),
