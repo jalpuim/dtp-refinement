@@ -51,18 +51,17 @@ Definition WhilePT {a : Type} (inv : Pow S) (cond : S -> bool) (body : PT a) : P
   let whilePost := (fun _ _ _ s' => inv s' /\ Is_false (cond s')) in
   [ whilePre , whilePost ].
 
+Ltac pt_trivial := unfold subset in *; intros; now eauto.
+
 Definition refineTransPT {a} (pt2 pt1 pt3 : PT a) : 
   pt1 ⊏ pt2 -> pt2 ⊏ pt3 -> pt1 ⊏ pt3.
     intros [pre12 post12] [pre23 post23].
     set (d (s : S) (pre1s : pre pt1 s) := pre23 s (pre12 s pre1s)).
-    refine (Refinement pt1 pt3 d _).
-    intros s pres s' v post3.
-    apply post12; apply post23; auto.
+    refine (Refinement pt1 pt3 d _); pt_trivial.
   Defined.
 
 Definition refineReflPT {a} (pt : PT a) : pt ⊏ pt.
-  refine (Refinement pt pt (fun s pres => pres) _).
-  intros; unfold subset; auto.
+  refine (Refinement pt pt (fun s pres => pres) _); pt_trivial.
   Defined.
 
 Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
@@ -126,17 +125,16 @@ Definition wrefines {a : Type} (w1 w2 : WhileL a) := (semantics w1) ⊏ (semanti
 
 Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity) : type_scope.
 
-(* Wouter: Do you want to finish these definitions? *)
-(* Joao: Yes. Work in progress now! *)
+Ltac unfold_refinements := unfold wrefines, semantics, preConditionOf, postConditionOf.
 
 Definition refineTrans {a} (w2 w1 w3 : WhileL a) : 
   w1 ⊑ w2 -> w2 ⊑ w3 -> w1 ⊑ w3.
-    unfold "⊑",semantics; apply refineTransPT.
+    unfold_refinements; now apply refineTransPT.
   Defined.
 
 Definition refineRefl {a} (w : WhileL a) :
   w ⊑ w.
-    unfold "⊑",semantics; apply refineReflPT.
+    unfold_refinements; apply refineReflPT.
   Defined.
 
 Lemma refineBind {a} (Pre : Pow S) (Mid Post : a -> Pow S) :
@@ -144,8 +142,7 @@ Lemma refineBind {a} (Pre : Pow S) (Mid Post : a -> Pow S) :
   w ⊑ bind (Spec _ ([Pre , fun _ _ => Mid ]))
            (fun a => Spec _ ([Mid a , fun _ _ => Post ])).
 Proof.
-  unfold "⊑"; simpl.
-  unfold preConditionOf, postConditionOf; simpl.
+  unfold_refinements; simpl.
   assert (d : pre ([Pre, fun (s : S) (_ : Pre s) => Post]) ⊂
        pre ([fun s : S =>
       {_ : Pre s | forall (s' : S) (v : a), Mid v s' -> Mid v s'},
@@ -153,11 +150,9 @@ Proof.
        (_ : {_ : Pre s | forall (s' : S) (v : a), Mid v s' -> Mid v s'})
        (y : a) (s'' : S) =>
        exists (s' : S) (x : a), {_ : Mid x s' | Post y s''}])).
-  unfold subset; simpl; intros; exists H; intros; auto.
-  apply (Refinement _ _ d).
-  unfold post, subset.
-  intros s x v s' [s'' [v' [Mid' Post']]].
-  apply Post'.
+  unfold subset; simpl in *; destruct_conjs; intros; split; auto.
+  apply (Refinement _ _ d).  
+  unfold post, subset; intros; destruct_conjs; now trivial.
 Qed.
 
 
@@ -177,9 +172,9 @@ Lemma refineIf {a} (cond : bool) (pt : PT a) :
                      fun s pre s' => post pt s (fst pre) s' ] in
   (Spec a pt) ⊑ if cond then (Spec a thenBranch) else (Spec a elseBranch).
 Proof.
-  unfold "⊑"; simpl.
-  destruct cond; simpl.
+  unfold_refinements; destruct cond; simpl.
   (* Joao: do we want this refinement rule? *)
+  (* Wouter: why wouldn't we? *)
 Admitted.
 
 Lemma refineWhilePT {a} (inv : Pow S) (cond : S -> bool) (Q : Pow S) : 
@@ -217,7 +212,6 @@ Ltac destruct_unit :=
   end.
 
 Ltac destruct_units := repeat destruct_unit.
-
 Ltac refine_simpl := unfold pre, post, subset; intros; simpl in *; destruct_conjs; repeat split; repeat subst; destruct_units.
 Ltac semantic_trivial := unfold semantics, pre, post; simpl; destruct_conjs; repeat split; now intuition.
 
