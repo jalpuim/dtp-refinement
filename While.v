@@ -5,11 +5,10 @@ Require Import Arith.Bool_nat.
 Require Import Div2.
 Require Import Heap.
 Require Import RefinementNew.
+Require Import Program.Tactics.
 Module Language.
 
 Definition Ptr := Addr.t.
-
-(* While Language -- now monadic*)
 
 Inductive WhileL (a : Type) : Type :=
   | New    : forall v, v -> (Ptr -> WhileL a) -> WhileL a
@@ -46,7 +45,7 @@ Definition Is_false (b : bool) :=
     | false => True
   end.
 
-Definition While_PT {a : Type} (inv : Pow S) (cond : S -> bool) (body : PT a) : PT a :=
+Definition WhilePT {a : Type} (inv : Pow S) (cond : S -> bool) (body : PT a) : PT a :=
   let whilePre := (fun s =>   (* The invariant should hold initially *)
                              inv s /\ 
                               (* If we enter the loop, the precondition of the body should hold *)
@@ -57,15 +56,16 @@ Definition While_PT {a : Type} (inv : Pow S) (cond : S -> bool) (body : PT a) : 
   let whilePost := (fun _ _ _ s' => inv s' /\ Is_false (cond s')) in
   [ whilePre , whilePost ].
 
+
+
 Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
   match w with
-    | New _ _ v k => Bind_PT (NewPT v) (fun p => semantics (k p))
-    | Read _ _ ptr k => Bind_PT (ReadPT ptr) (fun v => semantics (k v))
+    | New _ _ v k => BindPT (NewPT v) (fun p => semantics (k p))
+    | Read _ _ ptr k => BindPT (ReadPT ptr) (fun v => semantics (k v))
     | Write _ _ ptr v k => 
-      Seq_PT (Assign_PT (fun h => M.In ptr h) (fun s => (update s ptr (dyn _ v))))
+      SeqPT (AssignPT (fun h => M.In ptr h) (fun s => (update s ptr (dyn _ v))))
              (semantics k)            
-    | While _ inv c body => While_PT inv c (semantics body)
-    (* Seq_PT (WhilePT inv c) (semantics body) *)
+    | While _ inv c body => WhilePT inv c (semantics body)
     | Spec _ s => s
     | Return _ x => Predicate _ (fun s => True) (fun s _ v s' => s = s' /\ v = x)
   end.
@@ -119,13 +119,21 @@ Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity) : type_
 
 (* Wouter: Do you want to finish these definitions? *)
 
-Lemma refineAssign (w : WhileL) (id : Identifier) (exp : Expr) 
-  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre ((setIdent id (evalExpr exp s)) s)) (h' : pre (semantics w) ⊂ (fun h => M.In id h))
-  : w ⊑ Assign id exp.
+Ltac refine_simpl := unfold semantics, pre, post, BindPT, NewPT, ReadPT, AssignPT, WhilePT, bind; simpl; destruct_conjs; subst.
+
+Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
+  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre tt (update s ptr (dyn a x)))
+  (h' : pre (semantics w) ⊂ (fun h => M.In ptr h))
+  : w ⊑ Write _ _ ptr x (Return _ tt).
   Proof.
-    assert (d: pre (semantics w) ⊂ pre (semantics (Assign id exp))); refine_simpl.
+    assert (d: pre (semantics w) ⊂ pre (semantics (Write _ _ ptr x (Return _ tt)))).
+    Focus 2.
     apply (Refinement _ _ d).
-    simpl; intros s pres s' [eq _]; rewrite eq; auto.
+    simpl; intros s pres u s' H.
+    destruct_conjs; subst.
+    rewrite <- H2.
+    destruct u; apply (h s pres).
+    destruct (semantics w).  simpl. unfold subset; split; now intuition.
   Qed.
 
 
