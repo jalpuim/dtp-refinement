@@ -226,6 +226,56 @@ Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
     destruct (semantics w); now eapply h.
   Qed.
 
+Definition subst {a : Type} (ptr : Ptr) (v : a) (s : S) : S := 
+   update s ptr (dyn a v).
+
+Definition refineFollowAssignPre {a : Type} (ptr : Ptr) (x : a) (P : Pow S)
+           (Q Q' : forall (s : S), P s -> Pow S) :
+  let w  := Spec unit ([P,fun s p _ s' => Q s p s']) in
+  let w' := Spec unit ([P,fun s p _ s' => Q' s p s']) in
+  (forall s pres s', Q' s pres s' -> prod (Q s pres (subst ptr x s')) (M.In ptr s')) ->
+  pre (semantics w) ⊂ pre (semantics (w' ; Write unit ptr x (Return unit tt))).
+  intros w w' HQ.
+  unfold subset,semantics; simpl.
+  unfold preConditionOf; simpl.
+  intros s H; exists H.
+  intros s' v H'.
+  apply HQ in H' as [H' HIn].
+  exists HIn.
+  intros s'' v' H''.
+  apply I.
+Defined.
+
+Lemma refineFollowAssign {a : Type} (ptr : Ptr) (x : a) (P : Pow S) 
+(Q Q' : forall (s : S), P s -> Pow S) :
+  let w  := Spec _ ([P,fun s p _ s' => Q s p s']) in
+  let w' := Spec unit ([P,fun s p _ s' => Q' s p s']) in
+  (forall s pres s', Q' s pres s' -> prod (Q s pres (subst ptr x s')) (M.In ptr s')) ->
+  w ⊑ (w' ; Write _ ptr x (Return _ tt)).
+Proof.
+  intros w w' HQ.
+  set (d := refineFollowAssignPre _ _ _ _ _ HQ :
+             pre (semantics w) ⊂
+             pre (semantics (w' ; Write unit ptr x (Return unit tt)))).
+  apply (Refinement _ _ d); refine_simpl.
+  unfold subset, preConditionOf, postConditionOf in *.
+  simpl in *.
+  destruct H2.
+  repeat destruct H0; subst.
+  destruct x3; subst.
+  eapply fst.
+  apply (HQ _ _ _ H1).
+Defined.
+
+Lemma refineFollowAssign' {a : Type} (ptr : Ptr) (P : Pow S) 
+(Q : forall (s : S), P s -> Pow S) (Q' : forall (s : S), P s -> a -> Pow S) :
+  let w  := Spec unit ([P,fun s pres _ s' => Q s pres s']) in
+  let w' := Spec _ ([P,Q']) in
+  (forall s pres v s', Q' s pres v s' -> prod (Q s pres (subst ptr v s')) (M.In ptr s')) ->
+  w ⊑ (bind w' (fun v => Write _ ptr v (Return _ tt))).
+Proof.
+Admitted.
+
 Ltac refine_assign ptr x := eapply (refineAssign _ ptr x _ _).
 (* Wouter: this is a first approximation of this tactic, it probably needs to do quite a bit more... *)
 
@@ -292,24 +342,34 @@ Definition P : Addr.t := Addr.MkAddr 0.
 Definition Q : Addr.t := Addr.MkAddr 1.
 Definition N : Addr.t := Addr.MkAddr 2.
 
-Definition SWAP {a} := 
-  Spec a ([ fun s => M.In P s /\ M.In Q s /\ M.In N s
+Definition SWAP : WhileL unit.
+  apply Spec.
+  refine ([ (fun s => exists (p : Ptr), M.In p s) , fun s pres v s' => _ ]).
+  (* destruct pres. *)
+Admitted.
+  
+Definition SWAP' := 
+  Spec unit ([ fun s => M.In P s /\ M.In Q s /\ M.In N s
              , fun s _ _ s' => find s P = find s' Q
                             /\ find s Q = find s' P
                             /\ M.In P s' 
                             /\ M.In Q s'
                             /\ M.In N s']). 
 
-Definition skip {a} : WhileL a := Spec a Skip_PT.
-
-Definition swapResult {a} :
-  let SetQinN (s : WhileL a) := (Read _ a Q) (fun v => Write _ N v s) in
-  let SetPinQ (s : WhileL a) := (Read _ a P) (fun v => Write _ Q v s) in
-  let SetNinP (s : WhileL a) := (Read _ a N) (fun v => Write _ P v s) in
-  SWAP ⊑ SetQinN (SetPinQ (SetNinP skip)).
-  simpl.
-  (* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
+(* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
+Definition swapResult (a : Type) :
+  let SetQinN (s : WhileL unit) := (Read _ a Q) (fun v => Write _ N v s) in
+  let SetPinQ (s : WhileL unit) := (Read _ a P) (fun v => Write _ Q v s) in
+  let SetNinP (s : WhileL unit) := (Read _ a N) (fun v => Write _ P v s) in
+  SWAP' ⊑ SetQinN (SetPinQ (SetNinP (Return _ tt))).
 Proof.
+  unfold SWAP'; simpl.
+  eapply refineFollowAssign' with (ptr := P).
+  (*
+                                 (Q' := fun s _ _ s' => find s Q = find s' N
+                                                   /\ find s P = find s' Q
+                                                   /\ M.In P s' /\ M.In Q s' /\ M.In N s').
+  *)
 Admitted.
 
 (** End of example **)
