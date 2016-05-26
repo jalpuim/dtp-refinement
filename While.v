@@ -220,17 +220,16 @@ Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
   (h' : pre (semantics w) ⊂ (fun h => M.In ptr h))
   : w ⊑ Write _ ptr x (Return _ tt).
   Proof.
-    assert (d: pre (semantics w) ⊂ pre (semantics (Write _ ptr x (Return _ tt)))).
-    destruct (semantics w); semantic_trivial.
-    apply (Refinement _ _ d); refine_simpl.
-    destruct (semantics w); now eapply h.
+    assert (d: pre (semantics w) ⊂ pre (semantics (Write _ ptr x (Return _ tt)))) by
+      (destruct (semantics w); semantic_trivial).
+    apply (Refinement _ _ d); refine_simpl; destruct (semantics w); now eapply h.
   Qed.
 
 Ltac refine_assign ptr x := eapply (refineAssign _ ptr x _ _).
 (* Wouter: this is a first approximation of this tactic, it probably needs to do quite a bit more... *)
 
 
-(* Joao: (TODO) still missing the refinement rules for Read/Write/New/Return
+(* Joao: (TODO) still missing the refinement rules for Read/New/Return
 
 Lemma refineSeqAssocR : forall (w w1 w2 w3 : WhileL),
   (w ⊑ (w1 ; w2) ; w3) -> (w ⊑ w1 ; w2 ; w3).
@@ -292,9 +291,13 @@ Definition P : Addr.t := Addr.MkAddr 0.
 Definition Q : Addr.t := Addr.MkAddr 1.
 Definition N : Addr.t := Addr.MkAddr 2.
 
-Definition SWAP {a} := 
+Definition SWAP : WhileL unit.
+  apply (Spec _).
+  refine (Predicate _ (fun s => exists (p : Ptr), M.In p s) _).
+  intros s H v s'.
+  
   Spec a ([ fun s => M.In P s /\ M.In Q s /\ M.In N s
-             , fun s _ _ s' => find s P = find s' Q
+           , fun s _ _ s' => find s P = find s' Q
                             /\ find s Q = find s' P
                             /\ M.In P s' 
                             /\ M.In Q s'
