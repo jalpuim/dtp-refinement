@@ -120,9 +120,14 @@ Definition SeqPT {a : Type} (pt1 pt2 : PT a) : PT a :=
 Notation "pt1 ;; pt2" := (SeqPT pt1 pt2) (at level 52, right associativity).
 
 Definition BindPT {a b : Type} (pt1 : PT a) (pt2 : a -> PT b) : PT b :=
-  let seqPre := fun s => {pres : pre pt1 s | forall t v, post pt1 s pres v t -> pre (pt2 v) t} in
-  let seqPost : forall s : S, seqPre s -> b -> Pow S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) => 
-    exists t : S, exists x, exists q : post pt1 s (proj1_sig pres) x t, post (pt2 x) t (proj2_sig pres t x q) v s'
+  let seqPre := fun s => {pres : pre pt1 s & forall t v, post pt1 s pres v t -> pre (pt2 v) t} in
+               
+  let seqPost : forall s : S, seqPre s -> b -> Pow S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) =>
+    {t : S & {
+     x : a & {
+     q : post pt1 s (projT1 pres) x t &
+     post (pt2 x) t (projT2 pres t x q) v s'}}}
+    (* exists t : S, exists x, exists q : post pt1 s (proj1_sig pres) x t, post (pt2 x) t (proj2_sig pres t x q) v s'*)
   in
   [seqPre , seqPost].
 
