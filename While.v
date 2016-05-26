@@ -172,10 +172,12 @@ Lemma refineIf {a} (cond : bool) (pt : PT a) :
                      fun s pre s' => post pt s (fst pre) s' ] in
   (Spec a pt) ⊑ if cond then (Spec a thenBranch) else (Spec a elseBranch).
 Proof.
-  unfold_refinements; destruct cond; simpl.
-  (* Joao: do we want this refinement rule? *)
-  (* Wouter: why wouldn't we? *)
-Admitted.
+  unfold_refinements; destruct cond; simpl;
+  set (d := (fun s pres => pair pres I) : pre pt ⊂ pre ([fun s : S => (pre pt s * True)%type,
+                                        fun (s : S) (pre : pre pt s * True) (s' : a) => post pt s (fst pre) s']));
+  apply (Refinement _ _ d);
+  intros; refine_simpl.
+Qed.
 
 Lemma refineWhilePT {a} (inv : Pow S) (cond : S -> bool) (Q : Pow S) : 
   let pt := [inv , fun _ _ _ s' => inv s' /\ Q s'] in
@@ -236,9 +238,9 @@ Definition refineFollowAssignPre {a : Type} (ptr : Ptr) (x : a) (P : Pow S)
   (forall s pres s', Q' s pres s' -> prod (Q s pres (subst ptr x s')) (M.In ptr s')) ->
   pre (semantics w) ⊂ pre (semantics (w' ; Write unit ptr x (Return unit tt))).
   intros w w' HQ.
-  unfold subset,semantics; simpl.
+  refine_simpl.
   unfold preConditionOf; simpl.
-  intros s H; exists H.
+  exists H.
   intros s' v H'.
   apply HQ in H' as [H' HIn].
   exists HIn.
@@ -265,8 +267,27 @@ Proof.
   destruct x3; subst.
   eapply fst.
   apply (HQ _ _ _ H1).
-Defined.
+Qed.
 
+Definition refineFollowAssignPre' {a : Type} (ptr : Ptr) (P : Pow S) 
+(Q : forall (s : S), P s -> Pow S) (Q' : forall (s : S), P s -> a -> Pow S) :
+  let w  := Spec unit ([P,fun s pres _ s' => Q s pres s']) in
+  let w' := Spec _ ([P,Q']) in
+  (forall s pres v s', Q' s pres v s' -> prod (Q s pres (subst ptr v s')) (M.In ptr s')) ->
+  (pre (semantics w) ⊂
+      pre (semantics (bind w' (fun (v : a) => Write _ ptr v (Return _ tt))))).
+Proof.
+  intros w w' HQ.
+  refine_simpl.
+  unfold preConditionOf; simpl.
+  exists H.
+  intros s' v H'.
+  apply HQ in H' as [H' HIn].
+  exists HIn.
+  intros s'' v' H''.
+  apply I.
+Defined.
+  
 Lemma refineFollowAssign' {a : Type} (ptr : Ptr) (P : Pow S) 
 (Q : forall (s : S), P s -> Pow S) (Q' : forall (s : S), P s -> a -> Pow S) :
   let w  := Spec unit ([P,fun s pres _ s' => Q s pres s']) in
@@ -274,68 +295,62 @@ Lemma refineFollowAssign' {a : Type} (ptr : Ptr) (P : Pow S)
   (forall s pres v s', Q' s pres v s' -> prod (Q s pres (subst ptr v s')) (M.In ptr s')) ->
   w ⊑ (bind w' (fun v => Write _ ptr v (Return _ tt))).
 Proof.
-Admitted.
+  intros w w' HQ.
+  unfold "⊑".
+  apply (Refinement _ _ (refineFollowAssignPre' _ _ _ _ HQ)); refine_simpl.
+  unfold subset, preConditionOf, postConditionOf in *.
+  simpl in *.
+  repeat destruct H2; subst.
+  destruct x2; subst.
+  eapply fst.
+  apply (HQ _ _ _ _ H1).
+Qed.  
 
 Ltac refine_assign ptr x := eapply (refineAssign _ ptr x _ _).
 (* Wouter: this is a first approximation of this tactic, it probably needs to do quite a bit more... *)
-
-
-(* Joao: (TODO) still missing the refinement rules for Read/Write/New/Return
-
-Lemma refineSeqAssocR : forall (w w1 w2 w3 : WhileL),
+  
+Lemma refineSeqAssocR {a} : forall (w w1 w2 w3 : WhileL a),
   (w ⊑ (w1 ; w2) ; w3) -> (w ⊑ w1 ; w2 ; w3).
 Proof.
   intros.
   apply (refineTrans ((w1; w2); w3)).
   assumption.
-  apply refineSeqAssocR_PT.
+  unfold "⊑"; simpl.
+  set (d := (fun s pres => pres) : pre (semantics ((w1; w2); w3)) ⊂
+                                  pre (semantics (w1; w2; w3))).
+  apply (Refinement _ _ d).
+  refine_simpl.
+  apply H0.
 Defined.
 
-Lemma refineSeqAssocL : forall (w w1 w2 w3 : WhileL),
+Lemma refineSeqAssocL {a} : forall (w w1 w2 w3 : WhileL a),
   (w ⊑ w1 ; w2 ; w3) -> (w ⊑ (w1 ; w2) ; w3).
 Proof.
   intros.
   apply (refineTrans (w1; w2; w3)).
   assumption.
-  apply refineSeqAssocL_PT.
+  unfold "⊑"; simpl.
+  set (d := (fun s pres => pres) : pre (semantics (w1; w2; w3)) ⊂
+                                  pre (semantics ((w1; w2); w3))).
+  apply (Refinement _ _ d).
+  refine_simpl.
+  apply H0.  
 Defined.
 
-<<<<<<< HEAD
-=======
-Lemma refineAssign {a} (w : WhileL a)
-  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre ((setIdent id (evalExpr exp s)) s)) (h' : pre (semantics w) ⊂ (fun h => M.In id h))
-  : w ⊑ Assign id exp.
->>>>>>> 6153f5ebe4855668de41d7e1633199f3151e3438
-
-Definition subst (id : Identifier) (exp : Expr) (s : S) : S := 
-   setIdent id (evalExpr exp s) s.
-
-Lemma refineFollowAssign (id : Identifier) (exp : Expr) (P : Pow S) 
-(Q Q' : forall (s : S), P s -> Pow S) :
-  let w  := Spec ([P,Q]) in
-  let w' := Spec ([P,Q']) in
-  (forall s pres s', Q' s pres s' -> prod (Q s pres (subst id exp s')) (M.In id s')) ->
-  w ⊑ (w' ; id ::= exp).
-Proof.
-  intros w w' HQ.
-  set (d := (fun (s : S) (H : P s) => 
-              (exist (fun a => forall t : S, Q' s a t -> M.In id t) H 
-                     (fun t' Ht => snd (HQ s H t' Ht)))) : 
-             pre (semantics w) ⊂ pre (semantics (w' ; id ::= exp))).
-(*
-  set (d := (fun (s : S) (H : P s) => 
-              (exist (fun a => forall t : S, Q' s a t -> True) H (fun _ _ => I))) : 
-         pre (semantics w) ⊂ pre (semantics (w' ; id ::= exp))).*)
-  apply (Refinement _ _ d).
-  unfold subset; simpl; intros.
-  inversion H as [s' H1].
-  inversion H1 as [H2 [H3 H4]].
-  rewrite H3.
-  apply HQ.  
+(* Joao: maybe we want monad associativity laws? For instance: *)
+Lemma refineBindAssocR {a b c} :
+  forall (w : WhileL a) (w1 : WhileL b) (w2 : b -> WhileL c) (w3 : c -> WhileL a),
+  w ⊑ (bind (bind w1 w2) w3) ->
+  w ⊑ (bind w1 (fun x => bind (w2 x) w3)).
+Proof.  
+  intros.
+  apply (refineTrans (bind (bind w1 w2) w3)).
   assumption.
-Qed.
-*)  
-  
+  unfold "⊑" in *; simpl in *.
+  assert (d : pre (semantics (bind (bind w1 w2) w3)) ⊂
+                  pre (semantics (bind w1 (fun x : b => bind (w2 x) w3)))).
+Admitted.
+
 (** Just a brief example showing how the language currently looks like **)
   
 Definition P : Addr.t := Addr.MkAddr 0.
