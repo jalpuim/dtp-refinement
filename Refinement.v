@@ -1,5 +1,6 @@
 Require Import Bool.
 Require Import Heap.
+Require Import Program.Tactics.
 
 Definition S := heap.
 
@@ -18,7 +19,6 @@ Definition subset : Pow S -> Pow S -> Type :=
 
 Notation "P1 ⊂ P2" := (subset P1 P2) (at level 80) : type_scope.
 
-(* Extended PT to cover the return type  -- now the postcondition refers to the return value also *)
 Inductive PT (a : Type) : Type :=
   Predicate : forall pre : Pow S, (forall s : S, pre s -> a -> Pow S) -> PT a.
 
@@ -37,20 +37,12 @@ Inductive Refines {a : Type} (pt1 pt2 : PT a) : Type :=
     forall (d : pre pt1 ⊂ pre pt2), 
       (forall (s : S) (x : pre pt1 s) v, post pt2 s (d s x) v ⊂ post pt1 s x v) -> Refines pt1 pt2.
 
-(* Joao: please double-check this definition *)
-(* Wouter: It's OK I think. The question is where you quantify the v. 
-I'd expect a predicate transformer on Pow (A*S) -> Pow (A*S)
-Does that make sense?
-*) 
-
-Definition extend {a : Type} (pt : PT a) (v : a) (U : Pow S) : Pow S
-  := fun s => { p : pre pt s & post pt s p v ⊂ U}.
-
 Notation "PT1 ⊏ PT2" := (Refines PT1 PT2) (at level 90, no associativity) : type_scope.
 
 Notation "[ p , q ]" := (Predicate _ p q) (at level 70) : type_scope.
 
-Ltac refine_simpl := unfold subset, pre, post, extend; simpl; auto.
+Ltac refine_simpl  := unfold subset, pre, post, K, Ka in *; intros; simpl in *.
+Ltac destruct_pt a := refine_simpl; destruct_all (PT a).
 
 (*** Structural laws ***)
 
@@ -58,18 +50,16 @@ Lemma strengthenPost {a : Type} (P : Pow S) (Q1 Q2 : forall s, P s -> a -> Pow S
   (forall (s : S) (p : P s) (v : a), Q1 s p v ⊂ Q2 s p v) -> 
   [ P , Q2 ] ⊏ [ P , Q1 ].
 Proof.
-  intros.
-  set (d := fun (s : S) (H: P s) => H).
+  intros; set (d := fun (s : S) (H: P s) => H).
   apply (Refinement ([P, Q2]) ([P, Q1]) d).
-  intros. unfold post. unfold pre in x. unfold subset in *. intros. now auto.
+  refine_simpl; now auto.
 Qed.
 
 Lemma weakenPre {a : Type} (P1 P2 : Pow S) (f : P1 ⊂ P2) (Q : S -> a -> Pow S) :
   [P1, fun s _ => Q s ] ⊏ [P2 , fun s _ => Q s ].
 Proof.
-  intros.
-  apply (Refinement ([P1, fun s _ => Q s]) ([P2, fun s _ => Q s]) f).
-  unfold post,subset; intros; trivial.
+  intros; apply (Refinement ([P1, fun s _ => Q s]) ([P2, fun s _ => Q s]) f).
+  now refine_simpl.
 Qed.
 
 (*** SKIP **)
@@ -85,7 +75,7 @@ Lemma refineSkip {a : Type} (pt : PT a) :
   Proof.
     intros H; assert (d : pre pt ⊂ @pre a SkipPT) by (unfold subset; simpl pre; auto).
     apply (Refinement pt SkipPT d).
-    simpl subset; intros s pres s' v eq; rewrite <- eq; auto.
+    destruct_pt a; subst; now trivial.
   Qed.
 
 (*** ASSIGNMENT ***)
@@ -99,9 +89,9 @@ Definition AssignPT {a : Type} : (Pow S) -> (S -> S) -> PT a := fun p f =>
 Lemma refineAssignPT {a : Type} (pt : PT a) (p : Pow S) (f : S -> S) (h : forall (s : S) (pre : pre pt s) (v : a),  post pt s pre v (f s)) (h' : pre pt ⊂ p)
   : pt ⊏ AssignPT p f.
   Proof.
-    assert (d : pre pt ⊂ @pre a (AssignPT p f)); refine_simpl.
+    assert (d : pre pt ⊂ @pre a (AssignPT p f)) by (destruct_pt a; auto).
     eapply (Refinement pt (AssignPT p f) d).
-    simpl; intros s pres s' v' [eq p']; rewrite eq; auto.
+    destruct_pt a; destruct_conjs; subst; now auto.
   Qed.
 
 (*** SEQUENCING (ignoring return values) **)
@@ -113,7 +103,6 @@ Definition SeqPT {a : Type} (pt1 pt2 : PT a) : PT a :=
     v : a & {
     q : post pt1 s (projT1 pres) v t &
     post pt2 t (projT2 pres t v q) v s'}}}
-  (* exists t : S, exists v, exists q : post pt1 s (projT1 pres) v t, post pt2 t (projT2 pres t v q) v s' *)
   in
   [seqPre , seqPost].
 
@@ -131,31 +120,24 @@ Definition BindPT {a b : Type} (pt1 : PT a) (pt2 : a -> PT b) : PT b :=
   in
   [seqPre , seqPost].
 
-(* 
-Notation "pt1 ⟫= pt2" := (Seq_PT pt1 pt2) (at level 52, right associativity).
-*)
+Notation "pt1 ⟫= pt2" := (BindPT pt1 pt2) (at level 52, right associativity).
 
-(* Law 4.2 *)
 Lemma refineSeqPT {a : Type} (Pre Mid Post : Pow S) :
   let pt := [ Pre , fun _ _ v s' => Post s' ] in
   pt ⊏ ([Pre , (fun _ _ v s' => Mid s') ] ;; [Mid , (fun _ _ (v : a) s' => Post s') ]).
   Proof.
-    refine_simpl.
-    assert (d : pre (Predicate _ Pre (K a Post)) ⊂ pre ([Pre , (K _ Mid) ] ;; [Mid , (K a Post) ])); refine_simpl.
-    intros s pres; exists pres; auto.
+    assert (d : pre (Predicate _ Pre (K a Post)) ⊂ pre ([Pre , (K _ Mid) ] ;; [Mid , (K a Post) ])).
+    refine_simpl; split; now auto.
     eapply (Refinement _ _ d).
-    refine_simpl; intros s x v s' H; destruct H as [t [v' q]]; destruct q; auto.
+    refine_simpl; destruct_conjs; now auto.
 Qed.
 
-(* Joao: does this look good? *)
 Lemma refineBindPT {a : Type} (Pre : Pow S) (Mid Post : a -> Pow S) :
   let pt := [ Pre , fun _ _ v s' => Post v s' ] in
   pt ⊏ BindPT ([Pre , (fun _ _ v s' => Mid v s') ]) (fun a => [ Mid a , (fun _ _ v s' => Post v s') ]).
   Proof.
-    refine_simpl.
     assert (d : pre (Predicate _ Pre (Ka _ Post)) ⊂ pre (BindPT ([Pre, Ka _ Mid])
-       (fun v => [Mid v, Ka _ Post]))); refine_simpl.
-    intros s pres; exists pres; auto.
+       (fun v => [Mid v, Ka _ Post]))) by (refine_simpl; split; auto).
     eapply (Refinement _ _ d).
-    refine_simpl; intros s x v s' H; destruct H as [t [v' q]]; destruct q; auto.
+    refine_simpl; destruct_conjs; now auto.
 Qed.
