@@ -219,19 +219,17 @@ Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
   
 Lemma refineRead {a : Type} (w : WhileL unit) (w' : a -> WhileL unit)
   (ptr : Ptr)
-  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre tt s)
-  (h' : pre (semantics w) ⊂ (fun s => M.In ptr s))
+  (h : forall (s s' : S) (pre : pre (semantics w) s), post (semantics w) s pre tt s')
+  (h' : pre (semantics w) ⊂ (fun s => {v : a | find s ptr = Some (dyn a v)}))
+  (h'' : forall v, pre (semantics w) ⊂ (pre (semantics (w' v))))
   : w ⊑ Read _ a ptr w'.
 Proof.
-  (* eapply refineBind. *)
-  assert (d: pre (semantics w) ⊂ pre (semantics (Read unit a ptr w'))).
-  destruct (semantics w). refine_simpl.
-  apply h' in X.
-  eexists. (* should be provable via X *)
-  intros t v H.
-  destruct (semantics (w' v)).
-  simpl.
-Admitted.
+  assert (d: pre (semantics w) ⊂ pre (semantics (Read _ a ptr w'))).
+  destruct (semantics w); refine_simpl.
+  set (X' := X); apply h' in X'; exists X'.
+  intros t v [H1 H2]; subst; apply h''; auto.
+  apply (Refinement _ _ d); refine_simpl; destruct (semantics w). apply h.
+Qed.
   
 Definition subst {a : Type} (ptr : Ptr) (v : a) (s : S) : S := 
    update s ptr (dyn a v).
