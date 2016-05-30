@@ -4,9 +4,13 @@ Require Import String.
 Require Import Arith.Bool_nat.
 Require Import Div2.
 Require Import Heap.
-Require Import RefinementType.
+Require Import Refinement.
 Require Import Program.Tactics.
 Module Language.
+
+(*******************************************************************************
+                    ****   The While language ****
+*******************************************************************************)
 
 Definition Ptr := Addr.t.
 
@@ -14,60 +18,11 @@ Inductive WhileL (a : Type) : Type :=
   | New    : forall v, v -> (Ptr -> WhileL a) -> WhileL a
   | Read   : forall v, Ptr -> (v -> WhileL a) -> WhileL a
   | Write : forall {v}, Ptr -> v -> WhileL a  -> WhileL a
-  | While  : (S -> Prop) -> (S -> bool) -> WhileL a -> WhileL a (*TODO add variant *)
+  | While  : (S -> Prop) -> (S -> bool) -> WhileL a -> WhileL a
   | Spec   : PT a -> WhileL a
   | Return : a -> WhileL a.
 
 Notation "addr ≔ exp" := (Write id addr) (at level 52).
-
-(* Joao: is this strong enough? or should we add to the post-condition "find s p = None" ? *)
-(* Wouter: we could add this... but that would only be useful if we wanted to access unallocated memory... *)
-Definition NewPT {a : Type} (x : a) : PT Ptr :=              
-  Predicate _ (fun s => True) (* trivial precondition *)
-              (fun s _ p s' => (* given initial state s, result pointer p, and final state s' *)
-                 (forall p', p' <> p -> find s p = find s' p') (* all existing addresses are unmodified *)
-                 /\ find s' p = Some (dyn _ x)). (* and the heap now lets p point to x *)
-
-Definition ReadPT {a : Type} (ptr : Ptr) : PT a :=
-  Predicate _ (fun s => { v | find s ptr = Some (dyn a v)}) (* if there is a value for the ptr *)
-              (fun s pres v s' => (s = s') /\ (v = proj1_sig pres)). (* we need to return this value and leave the heap untouched *)
-
-(*
-Definition ReadPT {a : Type} (ptr : Ptr) : PT a :=
-  Predicate _ (fun s => exists v, find s ptr = Some (dyn a v)) (* if there is a value for the ptr *)
-              (fun s pres v s' => s = s' /\ find s ptr = Some (dyn a v)).*) (* we need to return this value and leave the heap untouched *)
-(* The postcondition here is slightly crappy -- any ideas? We can't project from the exists as it is in Prop *)
-(* Joao: Not really. Unless we change PT def with a precondition like S -> (Prop,a). *)
-
-Definition Is_false (b : bool) :=
-  match b with
-    | true => False
-    | false => True
-  end.
-
-Definition WhilePT {a : Type} (inv : S -> Prop) (cond : S -> bool) (body : PT a) : PT a :=
-  let whilePre := (fun s =>   (* The invariant should hold initially *)
-                             prod (inv s)
-                              (* If we enter the loop, the precondition of the body should hold *)
-                            { H : (forall s, Is_true (cond s) /\ inv s -> pre body s) &
-                              (* The loop body should preserve the invariant *)
-                            (forall s v s' (t : Is_true (cond s) /\ inv s), post body s (H s t) v s' -> inv s')})                          
-  in
-  let whilePost := (fun _ _ _ s' => inv s' /\ Is_false (cond s')) in
-  [ whilePre , whilePost ].
-
-Ltac pt_trivial := unfold subset in *; intros; now eauto.
-
-Definition refineTransPT {a} (pt2 pt1 pt3 : PT a) : 
-  pt1 ⊏ pt2 -> pt2 ⊏ pt3 -> pt1 ⊏ pt3.
-    intros [pre12 post12] [pre23 post23].
-    set (d (s : S) (pre1s : pre pt1 s) := pre23 s (pre12 s pre1s)).
-    refine (Refinement pt1 pt3 d _); pt_trivial.
-  Defined.
-
-Definition refineReflPT {a} (pt : PT a) : pt ⊏ pt.
-  refine (Refinement pt pt (fun s pres => pres) _); pt_trivial.
-  Defined.
 
 Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
   match w with
@@ -114,6 +69,10 @@ Fixpoint isExecutable {a : Type} (w: WhileL a) : Prop :=
     | Return _ a      => True
   end.
 
+(*******************************************************************************
+                   ****   Refinement of WhileL ****
+*******************************************************************************)
+
 Definition wrefines {a : Type} (w1 w2 : WhileL a) := (semantics w1) ⊏ (semantics w2).
 
 Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity) : type_scope.
@@ -134,6 +93,7 @@ Definition refineBind {a} (Pre : Pow S) (Mid Post : a -> Pow S) :
   let w := Spec _ ([ Pre , fun _ _ => Post ]) in
   w ⊑ bind (Spec _ ([Pre , fun _ _ => Mid ]))
            (fun a => Spec _ ([Mid a , fun _ _ => Post ])).
+
   unfold_refinements; simpl.
   assert (d : pre ([Pre, fun (s : S) (_ : Pre s) => Post]) ⊂
        pre ([fun s : S =>
@@ -166,7 +126,7 @@ Proof.
   set (d := (fun s pres => pair pres I) : pre pt ⊂ pre ([fun s : S => (pre pt s * True)%type,
                                         fun (s : S) (pre : pre pt s * True) (s' : a) => post pt s (fst pre) s']));
   apply (Refinement _ _ d);
-  intros; refine_simpl.
+  intros; destruct_pt a; auto.
 Defined.
 
 Lemma refineWhilePT {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) : 
@@ -177,14 +137,9 @@ Lemma refineWhilePT {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) :
   Proof.
     intros pt body QH; simpl in *.
     assert (d: pre pt ⊂ pre (WhilePT inv cond body)).
-    unfold subset, pt,WhilePT; simpl; intros; split; [assumption | ].
-    split.
-    intros s' H1. 
-    destruct H1; split; assumption.
-    intros s' v s'' [H1 H2] H3; assumption.
+    refine_simpl; repeat split; destruct_conjs; auto.
     apply (Refinement _ _ d).
-    intros s PreS v' s' [H1 H2].
-    split; [ | apply QH]; assumption.
+    intros; repeat split; refine_simpl; destruct_conjs; now auto.
 Qed.
 
 Lemma refineWhile {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) 
@@ -193,17 +148,10 @@ Lemma refineWhile {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop)
   let body := [fun s => inv s /\ Is_true (cond s), (fun _ _ _ s => inv s)] in
   w ⊑ While a inv cond (Spec a body).
   Proof.
-    unfold "⊑",semantics.
-    now (apply refineWhilePT).
-Qed.
+    refine_simpl; now (apply refineWhilePT).
+  Qed.
 
-
-Ltac destruct_unit :=
-  match goal with
-    [ H : unit |- _ ] => destruct H
-  end.
-
-Ltac destruct_units := repeat destruct_unit.
+Ltac destruct_units := destruct_all unit.
 Ltac refine_simpl := unfold pre, post, subset; intros; simpl in *; destruct_conjs; repeat split; repeat subst; destruct_units.
 Ltac semantic_trivial := unfold semantics, pre, post; simpl; destruct_conjs; repeat split; now intuition.
 
@@ -217,24 +165,7 @@ Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
     apply (Refinement _ _ d); refine_simpl; destruct (semantics w); now eapply h.
   Qed.
   
-Lemma refineRead {a : Type} (w : WhileL unit) (w' : a -> WhileL unit)
-  (ptr : Ptr)
-  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre tt s)
-  (h' : pre (semantics w) ⊂ (fun s => M.In ptr s))
-  : w ⊑ Read _ a ptr w'.
-Proof.
-  (* eapply refineBind. *)
-  assert (d: pre (semantics w) ⊂ pre (semantics (Read unit a ptr w'))).
-  destruct (semantics w). refine_simpl.
-  apply h' in X.
-  eexists. (* should be provable via X *)
-  intros t v H.
-  destruct (semantics (w' v)).
-  simpl.
-Admitted.
-  
-Definition subst {a : Type} (ptr : Ptr) (v : a) (s : S) : S := 
-   update s ptr (dyn a v).
+Definition subst {a : Type} (ptr : Ptr) (v : a) (s : S) : S :=  update s ptr (dyn a v).
 
 Definition refineFollowAssignPre {a : Type} (ptr : Ptr) (x : a) (P : Pow S)
            (Q Q' : forall (s : S), P s -> Pow S) :
@@ -306,56 +237,46 @@ Proof.
   now eapply HQ. 
 Qed.  
 
-
 Ltac refine_assign ptr x := eapply (refineAssign _ ptr x _ _).
 (* Wouter: this is a first approximation of this tactic, it probably needs to do quite a bit more... *)
   
 Lemma refineSeqAssocR {a} : forall (w w1 w2 w3 : WhileL a),
   (w ⊑ (w1 ; w2) ; w3) -> (w ⊑ w1 ; w2 ; w3).
 Proof.
-  intros.
-  apply (refineTrans ((w1; w2); w3)).
-  assumption.
-  unfold "⊑"; simpl.
+  intros; apply (refineTrans ((w1; w2); w3)); [ assumption | ].
   set (d := (fun s pres => pres) : pre (semantics ((w1; w2); w3)) ⊂
                                   pre (semantics (w1; w2; w3))).
-  apply (Refinement _ _ d).
-  refine_simpl.
-  apply X0.
+  apply (Refinement _ _ d); now trivial.
 Defined.
 
 Lemma refineSeqAssocL {a} : forall (w w1 w2 w3 : WhileL a),
   (w ⊑ w1 ; w2 ; w3) -> (w ⊑ (w1 ; w2) ; w3).
 Proof.
-  intros.
-  apply (refineTrans (w1; w2; w3)).
-  assumption.
-  unfold "⊑"; simpl.
+  intros; apply (refineTrans (w1; w2; w3)); [ assumption | ].
   set (d := (fun s pres => pres) : pre (semantics (w1; w2; w3)) ⊂
                                   pre (semantics ((w1; w2); w3))).
-  apply (Refinement _ _ d).
-  refine_simpl.
-  apply X0.  
+  apply (Refinement _ _ d); now trivial.
 Defined.
 
-(* Joao: maybe we want monad associativity laws? For instance: *)
-Lemma refineBindAssocR {a b c} :
-  forall (w : WhileL a) (w1 : WhileL b) (w2 : b -> WhileL c) (w3 : c -> WhileL a),
-  w ⊑ (bind (bind w1 w2) w3) ->
-  w ⊑ (bind w1 (fun x => bind (w2 x) w3)).
-Proof.  
-  intros.
-  apply (refineTrans (bind (bind w1 w2) w3)).
-  assumption.
-  unfold "⊑" in *; simpl in *.
-  assert (d : pre (semantics (bind (bind w1 w2) w3)) ⊂
-                  pre (semantics (bind w1 (fun x : b => bind (w2 x) w3)))).
+Lemma refineRead {a : Type} (w : WhileL unit) (w' : a -> WhileL unit)
+  (ptr : Ptr)
+  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre tt s)
+  (h' : pre (semantics w) ⊂ (fun s => M.In ptr s))
+  : w ⊑ Read _ a ptr w'.
+Proof.
+  assert (d: pre (semantics w) ⊂ pre (semantics (Read unit a ptr w'))).
+  destruct (semantics w); refine_simpl.
+  unfold subset in *.
+  apply h' in X.
+  eexists. 
+  intros t v H.
+  destruct (semantics (w' v)).
+  simpl.
+  
 Admitted.
 
 (** Just a brief example showing how the language currently looks like **)
-  
 Definition SWAP : WhileL unit.
-
   apply (Spec _).
   refine (Predicate _ (fun s => (prod {p : Ptr | M.In p s}
                                      {q : Ptr | M.In q s})) _).
@@ -376,6 +297,7 @@ Definition swapResult (a : Type) :
   SWAP ⊑ SetQinN Q (fun N => SetPinQ P Q (SetNinP P N (Return _ tt))) })}.
 Proof.
   unfold SWAP; simpl.
+  
   (*
   eapply refineFollowAssign' with (ptr := P).
                                  (Q' := fun s _ _ s' => find s Q = find s' N
@@ -408,150 +330,5 @@ Admitted.
 
 (* Joao: I stopped here *)
 
-Definition refineSplit (w1 w2 w3 w4 : WhileL) :
-  (w1 ⊑ w3) -> (w2 ⊑ w4) -> (w1 ; w2) ⊑ (w3 ; w4).
-    unfold "⊑",semantics; apply refineSplitPT.
-  Defined.
-
-Definition refineSplitIf (w1 w2 w3 w4 : WhileL) (cond : BExpr) :
-  (w1 ⊑ w3) -> (w2 ⊑ w4) -> If cond w1 w2 ⊑ If cond w3 w4.
-    unfold "⊑",semantics; apply refineSplitIfPT.
-  Defined.
-
-Definition refineBody : forall (inv : Pow S) (cond : BExpr) (bodyL bodyR : WhileL),
-  bodyL ⊑ bodyR ->
-  While inv cond bodyL ⊑ While inv cond bodyR.
-Proof.
-  unfold "⊑",semantics.
-  intros.
-  assert (d: pre (semantics (While inv cond bodyL)) ⊂
-             pre (semantics (While inv cond bodyR))).
-  unfold subset; simpl; intros s [Inv [H1 H2]]; split.
-  assumption.
-  inversion H as [Pre Post].
-  set (E := fun s0 H => (Pre s0 (H1 _ H))).
-  exists E.
-  intros s0 s' P Q.
-  eapply H2.
-  apply Post.
-  unfold E in Q.
-  exact Q.
-
-  apply (Refinement _ _ d).
-  intros.
-  unfold post,pre,subset in *.
-  simpl in *.
-  intros; assumption.
-Defined.
-
 End Semantics.
 
-Module CodeGeneration.
-
-Import Language.
-Import Heap.
-
-Open Local Scope string_scope.
-
-Definition t := Addr.t.
-
-Definition identToCode (ident: Identifier) : string :=
-  "x_" ++ (Addr.printAddr ident print_nat).
-
-Fixpoint exprToCode (e: Expr) : string :=
-  match e with
-  | Var n     => identToCode n
-  | EConst n  => print_nat n
-  | Plus x y  => exprToCode x ++ " + " ++ exprToCode y
-  | Minus x y => exprToCode x ++ " - " ++ exprToCode y
-  | Mult x y  => exprToCode x ++ " * " ++ exprToCode y
-  | Div2 x    => "(" ++ exprToCode x ++ ") / 2"
-  end.
-
-Fixpoint bExprToCode (e: BExpr) : string :=
-  match e with
-  | BConst b  => match b with 
-                 | true  => "true"
-                 | false => "false"
-                 end
-  | And b1 b2 => "(" ++ bExprToCode b1 ++ " && " ++ bExprToCode b2 ++ ")"
-  | Or b1 b2  => "(" ++ bExprToCode b1 ++ " || " ++ bExprToCode b2 ++ ")"
-  | Not e     => "!" ++ bExprToCode e
-  | Eq e1 e2  => "(" ++ exprToCode e1 ++ " == " ++ exprToCode e2  ++ ")"
-  | Lt e1 e2  => "(" ++ exprToCode e1 ++ " < " ++ exprToCode e2  ++ ")"
-  | Le e1 e2  => "(" ++ exprToCode e1 ++ " <= " ++ exprToCode e2  ++ ")"
-  | Gt e1 e2  => "(" ++ exprToCode e1 ++ " > " ++ exprToCode e2  ++ ")"
-  | Ge e1 e2  => "(" ++ exprToCode e1 ++ " >= " ++ exprToCode e2  ++ ")"
-  end.
-
-Fixpoint sp (n: nat) : string := 
-   match n with
-   | 0 => ""
-   | Datatypes.S n' => " " ++ (sp n')
-end.
-
-Lemma isExecSeq1 : forall w1 w2, isExecutable (Seq w1 w2) -> isExecutable w1.
-Proof. intros; destruct H as [H1 H2]; assumption. Qed.
-
-Lemma isExecSeq2 : forall w1 w2, isExecutable (Seq w1 w2) -> isExecutable w2.
-Proof. intros; destruct H as [H1 H2]; assumption. Qed.
-
-Lemma isExecThen : forall c t e, isExecutable (If c t e) -> isExecutable t.
-Proof. intros; destruct H as [H1 H2]; assumption. Qed.
-
-Lemma isExecElse : forall c t e, isExecutable (If c t e) -> isExecutable e.
-Proof. intros; destruct H as [H1 H2]; assumption. Qed.
-
-Lemma isExecBody : forall inv c b, isExecutable (While inv c b) -> isExecutable b.
-Proof. intros; assumption. Qed.
-
-Fixpoint toCode (w: WhileL) (p: isExecutable w) (indent: nat) : string :=
-  match w as w' return (isExecutable w' -> string) with
-  | New x          => fun _ => "FIXME" (*fun _ => do n <- fresh; let varName = "x_" ++ show n ; return (varName ++ "=" ++ exprToCode x) *)
-    (* FIXME: should not be x in the above line, but the freshly allocated address *)
-  | Skip           => fun _ => ((sp indent) ++ "skip;")
-  | Assign id exp  => fun _ => 
-                      ((sp indent) ++ (identToCode id) ++ " = " ++ (exprToCode exp)) ++ ";"
-  | Seq w1 w2      => fun p' => 
-                      (toCode w1 (isExecSeq1 w1 w2 p') indent) ++ "
-" ++ 
-                      (toCode w2 (isExecSeq2 w1 w2 p') indent)
-  | If c t e       => fun p' =>
-                      (sp indent) ++ "if " ++ (bExprToCode c) ++ "
-" ++
-                      (sp indent) ++ "{
-" ++ 
-                      (toCode t (isExecThen c t e p') (indent+4)) ++ "
-" ++
-                      (sp indent) ++ "}
-" ++
-                      (sp indent) ++ "else 
-" ++ 
-                      (sp indent) ++ "{
-" ++ 
-                      (toCode e (isExecElse c t e p') (indent+4)) ++ "
-" ++
-                      (sp indent) ++ "}"
-  | While inv c b  => fun p' =>
-                      (sp indent) ++ "while (" ++ (bExprToCode c) ++ ")
-" ++
-                      (sp indent) ++ "{
-" ++
-                      (toCode b (isExecBody inv c b p') (indent+4)) ++ "
-" ++
-                      (sp indent) ++ "}"
-  | Spec pt        => fun p' => match p' with 
-                                end
-  end p.
-
-Definition wrapMain (code : string) : string :=
-"int main() {
-    int n,p,q,r;
-" ++ code ++ "
-    return 0;
-}".
-
-Definition whileToCode (w: WhileL) (p: isExecutable w) : string :=
-  wrapMain (toCode w p 4).
-
-End CodeGeneration.

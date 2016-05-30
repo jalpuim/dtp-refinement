@@ -2,6 +2,10 @@ Require Import Bool.
 Require Import Heap.
 Require Import Program.Tactics.
 
+(*******************************************************************************
+                    ****   Basic definitions ****
+*******************************************************************************)
+
 Definition S := heap.
 
 Definition Pow : Type -> Type := fun a => a -> Type.
@@ -41,61 +45,25 @@ Notation "PT1 ⊏ PT2" := (Refines PT1 PT2) (at level 90, no associativity) : ty
 
 Notation "[ p , q ]" := (Predicate _ p q) (at level 70) : type_scope.
 
-Ltac refine_simpl  := unfold subset, pre, post, K, Ka in *; intros; simpl in *.
+Ltac refine_simpl  := unfold pre, post, K, Ka, subset in *; intros; simpl in *.
 Ltac destruct_pt a := refine_simpl; destruct_all (PT a).
 
-(*** Structural laws ***)
 
-Lemma strengthenPost {a : Type} (P : Pow S) (Q1 Q2 : forall s, P s -> a -> Pow S) :
-  (forall (s : S) (p : P s) (v : a), Q1 s p v ⊂ Q2 s p v) -> 
-  [ P , Q2 ] ⊏ [ P , Q1 ].
-Proof.
-  intros; set (d := fun (s : S) (H: P s) => H).
-  apply (Refinement ([P, Q2]) ([P, Q1]) d).
-  refine_simpl; now auto.
-Qed.
-
-Lemma weakenPre {a : Type} (P1 P2 : Pow S) (f : P1 ⊂ P2) (Q : S -> a -> Pow S) :
-  [P1, fun s _ => Q s ] ⊏ [P2 , fun s _ => Q s ].
-Proof.
-  intros; apply (Refinement ([P1, fun s _ => Q s]) ([P2, fun s _ => Q s]) f).
-  now refine_simpl.
-Qed.
-
-(*** SKIP **)
+(*******************************************************************************
+             ****   Primitive Predicate Transformers ****
+*******************************************************************************)
 
 Definition SkipPT {a : Type} : PT a := 
   let skipPre := fun s => True in
   let skipPost := fun s pres v s' => s = s' in
   [skipPre , skipPost].
 
-(* Law 4.1 *)
-Lemma refineSkip {a : Type} (pt : PT a) :
-  (forall s (pres : pre pt s) v, post pt s pres v s) -> pt ⊏ SkipPT.
-  Proof.
-    intros H; assert (d : pre pt ⊂ @pre a SkipPT) by (unfold subset; simpl pre; auto).
-    apply (Refinement pt SkipPT d).
-    destruct_pt a; subst; now trivial.
-  Qed.
-
-(*** ASSIGNMENT ***)
 
 Definition AssignPT {a : Type} : (Pow S) -> (S -> S) -> PT a := fun p f =>
   let assignPre := p in
   let assignPost := fun s _ v s' => prod (s' = f s) (p s') in
   [assignPre , assignPost].
 
-(* Law 1.3 *)
-Lemma refineAssignPT {a : Type} (pt : PT a) (p : Pow S) (f : S -> S) (h : forall (s : S) (pre : pre pt s) (v : a),  post pt s pre v (f s)) (h' : pre pt ⊂ p)
-  : pt ⊏ AssignPT p f.
-  Proof.
-    assert (d : pre pt ⊂ @pre a (AssignPT p f)) by (destruct_pt a; auto).
-    eapply (Refinement pt (AssignPT p f) d).
-    destruct_pt a; destruct_conjs; subst; now auto.
-  Qed.
-
-(*** SEQUENCING (ignoring return values) **)
-  
 Definition SeqPT {a : Type} (pt1 pt2 : PT a) : PT a :=
   let seqPre := fun s => {pres : pre pt1 s & forall t v, post pt1 s pres v t -> pre pt2 t} in
   let seqPost : forall s : S, seqPre s -> a -> Pow S := fun (s : S) (pres : seqPre s) (v : a) (s' : S) => 
@@ -116,13 +84,77 @@ Definition BindPT {a b : Type} (pt1 : PT a) (pt2 : a -> PT b) : PT b :=
      x : a & {
      q : post pt1 s (projT1 pres) x t &
      post (pt2 x) t (projT2 pres t x q) v s'}}}
-    (* exists t : S, exists x, exists q : post pt1 s (proj1_sig pres) x t, post (pt2 x) t (proj2_sig pres t x q) v s'*)
   in
   [seqPre , seqPost].
 
 Notation "pt1 ⟫= pt2" := (BindPT pt1 pt2) (at level 52, right associativity).
 
-Lemma refineSeqPT {a : Type} (Pre Mid Post : Pow S) :
+Definition NewPT {a : Type} (x : a) : PT Addr.t :=              
+  Predicate _ (fun s => True) 
+              (fun s _ p s' => 
+                 (forall p', p' <> p -> find s p = find s' p')
+                 /\ find s' p = Some (dyn _ x)).
+
+Definition ReadPT {a : Type} (ptr : Addr.t) : PT a :=
+  Predicate _ (fun s => { v | find s ptr = Some (dyn a v)}) 
+              (fun s pres v s' => (s = s') /\ (v = proj1_sig pres)).
+
+Definition Is_false (b : bool) :=
+  match b with
+    | true => False
+    | false => True
+  end.
+
+Definition WhilePT {a : Type} (inv : S -> Prop) (cond : S -> bool) (body : PT a) : PT a :=
+  let whilePre := (fun s =>   (* The invariant should hold initially *)
+                             prod (inv s)
+                              (* If we enter the loop, the precondition of the body should hold *)
+                            { H : (forall s, Is_true (cond s) /\ inv s -> pre body s) &
+                              (* The loop body should preserve the invariant *)
+                            (forall s v s' (t : Is_true (cond s) /\ inv s), post body s (H s t) v s' -> inv s')})                          
+  in
+  let whilePost := (fun _ _ _ s' => inv s' /\ Is_false (cond s')) in
+  [ whilePre , whilePost ].
+
+
+(*******************************************************************************
+                  ****   Basic refinement rules ****
+*******************************************************************************)
+
+
+Lemma strengthenPost {a : Type} (P : Pow S) (Q1 Q2 : forall s, P s -> a -> Pow S) :
+  (forall (s : S) (p : P s) (v : a), Q1 s p v ⊂ Q2 s p v) -> 
+  [ P , Q2 ] ⊏ [ P , Q1 ].
+Proof.
+  intros; set (d := fun (s : S) (H: P s) => H).
+  apply (Refinement ([P, Q2]) ([P, Q1]) d).
+  refine_simpl; now auto.
+Qed.
+
+Lemma weakenPre {a : Type} (P1 P2 : Pow S) (f : P1 ⊂ P2) (Q : S -> a -> Pow S) :
+  [P1, fun s _ => Q s ] ⊏ [P2 , fun s _ => Q s ].
+Proof.
+  intros; apply (Refinement ([P1, fun s _ => Q s]) ([P2, fun s _ => Q s]) f).
+  now refine_simpl.
+Qed.
+
+Lemma refineSkip {a : Type} (pt : PT a) :
+  (forall s (pres : pre pt s) v, post pt s pres v s) -> pt ⊏ SkipPT.
+  Proof.
+    intros H; assert (d : pre pt ⊂ @pre a SkipPT) by (unfold subset; simpl pre; auto).
+    apply (Refinement pt SkipPT d).
+    destruct_pt a; subst; now trivial.
+  Qed.
+
+Lemma refineAssign {a : Type} (pt : PT a) (p : Pow S) (f : S -> S) (h : forall (s : S) (pre : pre pt s) (v : a),  post pt s pre v (f s)) (h' : pre pt ⊂ p)
+  : pt ⊏ AssignPT p f.
+  Proof.
+    assert (d : pre pt ⊂ @pre a (AssignPT p f)) by (destruct_pt a; auto).
+    eapply (Refinement pt (AssignPT p f) d).
+    destruct_pt a; destruct_conjs; subst; now auto.
+  Qed.
+
+Lemma refineSeq {a : Type} (Pre Mid Post : Pow S) :
   let pt := [ Pre , fun _ _ v s' => Post s' ] in
   pt ⊏ ([Pre , (fun _ _ v s' => Mid s') ] ;; [Mid , (fun _ _ (v : a) s' => Post s') ]).
   Proof.
@@ -132,7 +164,7 @@ Lemma refineSeqPT {a : Type} (Pre Mid Post : Pow S) :
     refine_simpl; destruct_conjs; now auto.
 Qed.
 
-Lemma refineBindPT {a : Type} (Pre : Pow S) (Mid Post : a -> Pow S) :
+Lemma refineBind {a : Type} (Pre : Pow S) (Mid Post : a -> Pow S) :
   let pt := [ Pre , fun _ _ v s' => Post v s' ] in
   pt ⊏ BindPT ([Pre , (fun _ _ v s' => Mid v s') ]) (fun a => [ Mid a , (fun _ _ v s' => Post v s') ]).
   Proof.
@@ -141,3 +173,16 @@ Lemma refineBindPT {a : Type} (Pre : Pow S) (Mid Post : a -> Pow S) :
     eapply (Refinement _ _ d).
     refine_simpl; destruct_conjs; now auto.
 Qed.
+
+Definition refineTransPT {a} (pt2 pt1 pt3 : PT a) : 
+  pt1 ⊏ pt2 -> pt2 ⊏ pt3 -> pt1 ⊏ pt3.
+    intros [pre12 post12] [pre23 post23].
+    set (d (s : S) (pre1s : pre pt1 s) := pre23 s (pre12 s pre1s)).
+    refine (Refinement pt1 pt3 d _).
+    now (destruct_pt a; auto).
+  Defined.
+
+Definition refineReflPT {a} (pt : PT a) : pt ⊏ pt.
+  refine (Refinement pt pt (fun s pres => pres) _).
+  now (destruct_pt a; auto).
+  Defined.
