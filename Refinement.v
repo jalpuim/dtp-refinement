@@ -8,7 +8,7 @@ Require Import Program.Tactics.
 
 Definition S := heap.
 
-Definition Pow : Type -> Type := fun a => a -> Type.
+Definition Pow : Type -> Type := fun a => a -> Prop.
 
 Definition K : forall {A} {a : Type}, Pow S -> (forall s:S, A s -> a -> Pow S) := fun a _ pt _ _ _ s => pt s.
 
@@ -65,13 +65,9 @@ Definition AssignPT {a : Type} : (Pow S) -> (S -> S) -> PT a := fun p f =>
   [assignPre , assignPost].
 
 Definition SeqPT {a : Type} (pt1 pt2 : PT a) : PT a :=
-  let seqPre := fun s => {pres : pre pt1 s & forall t v, post pt1 s pres v t -> pre pt2 t} in
+  let seqPre := fun s => { pres : pre pt1 s & forall t v, post pt1 s pres v t -> pre pt2 t} in
   let seqPost : forall s : S, seqPre s -> a -> Pow S := fun (s : S) (pres : seqPre s) (v : a) (s' : S) => 
-  { t : S & {
-    v : a & {
-    q : post pt1 s (projT1 pres) v t &
-    post pt2 t (projT2 pres t v q) v s'}}}
-  in
+  exists (t : S), exists (v : a), exists (q : post pt1 s (projT1 pres) v t), post pt2 t (projT2 pres t v q) v s' in
   [seqPre , seqPost].
 
 Notation "pt1 ;; pt2" := (SeqPT pt1 pt2) (at level 52, right associativity).
@@ -80,10 +76,8 @@ Definition BindPT {a b : Type} (pt1 : PT a) (pt2 : a -> PT b) : PT b :=
   let seqPre := fun s => {pres : pre pt1 s & forall t v, post pt1 s pres v t -> pre (pt2 v) t} in
                
   let seqPost : forall s : S, seqPre s -> b -> Pow S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) =>
-    {t : S & {
-     x : a & {
-     q : post pt1 s (projT1 pres) x t &
-     post (pt2 x) t (projT2 pres t x q) v s'}}}
+    exists (t : S), exists (x : a), exists (q : post pt1 s (projT1 pres) x t), 
+     post (pt2 x) t (projT2 pres t x q) v s'
   in
   [seqPre , seqPost].
 
@@ -96,8 +90,8 @@ Definition NewPT {a : Type} (x : a) : PT Addr.t :=
                  /\ find s' p = Some (dyn _ x)).
 
 Definition ReadPT {a : Type} (ptr : Addr.t) : PT a :=
-  Predicate _ (fun s => { v | find s ptr = Some (dyn a v)}) 
-              (fun s pres v s' => (s = s') /\ (v = proj1_sig pres)).
+  Predicate _ (fun s => exists v, find s ptr = Some (dyn a v)) 
+              (fun s pres v s' => (s = s') /\ (Some (dyn a v) = find s ptr)).
 
 Definition Is_false (b : bool) :=
   match b with

@@ -78,6 +78,17 @@ Definition wrefines {a : Type} (w1 w2 : WhileL a) := (semantics w1) ⊏ (semanti
 Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity) : type_scope.
 
 Ltac unfold_refinements := unfold wrefines, semantics, preConditionOf, postConditionOf.
+Ltac destruct_units := destruct_all unit.
+Ltac refine_unfold := unfold pre, post, subset, bind, "⟫="   in *.
+Ltac refine_simpl := refine_unfold; intros; simpl in *; destruct_conjs; repeat split; repeat subst; destruct_units.
+Ltac semantic_trivial := unfold semantics, pre, post; simpl; destruct_conjs; repeat split; now intuition.
+Ltac exists_now :=
+   match goal with
+    | x : ?t |- { y : ?t & _} => exists x
+    | _ => idtac
+   end.
+
+
 
 Definition refineTrans {a} (w2 w1 w3 : WhileL a) : 
   w1 ⊑ w2 -> w2 ⊑ w3 -> w1 ⊑ w3.
@@ -88,24 +99,6 @@ Definition refineRefl {a} (w : WhileL a) :
   w ⊑ w.
     unfold_refinements; apply refineReflPT.
   Defined.
-
-Definition refineBind {a} (Pre : Pow S) (Mid Post : a -> Pow S) :
-  let w := Spec _ ([ Pre , fun _ _ => Post ]) in
-  w ⊑ bind (Spec _ ([Pre , fun _ _ => Mid ]))
-           (fun a => Spec _ ([Mid a , fun _ _ => Post ])).
-
-  unfold_refinements; simpl.
-  assert (d : pre ([Pre, fun (s : S) (_ : Pre s) => Post]) ⊂
-       pre ([fun s : S =>
-      {_ : Pre s & forall (s' : S) (v : a), Mid v s' -> Mid v s'},
-     fun (s : S)
-       (_ : {_ : Pre s & forall (s' : S) (v : a), Mid v s' -> Mid v s'})
-       (y : a) (s'' : S) =>
-       { s' : S & { x : a & {_ : Mid x s' & Post y s''} } }])).
-  unfold subset; simpl in *; destruct_conjs; intros; split; auto.
-  apply (Refinement _ _ d).  
-  unfold post, subset; intros; destruct_conjs; now trivial.
-Defined.
 
 Definition refineSeq {a} (Pre Mid Post : Pow S) :
   let w := Spec a ([ Pre , fun _ _ _ => Post ]) in
@@ -150,16 +143,6 @@ Lemma refineWhile {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop)
     refine_simpl; now (apply refineWhilePT).
   Qed.
 
-Ltac destruct_units := destruct_all unit.
-Ltac refine_unfold := unfold pre, post, subset in *.
-Ltac refine_simpl := refine_unfold; intros; simpl in *; destruct_conjs; repeat split; repeat subst; destruct_units.
-Ltac semantic_trivial := unfold semantics, pre, post; simpl; destruct_conjs; repeat split; now intuition.
-Ltac exists_now :=
-   match goal with
-    | x : ?t |- { y : ?t & _} => exists x
-    | _ => idtac
-   end.
-
 Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
   (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre tt (update s ptr (dyn a x)))
   (h' : pre (semantics w) ⊂ (fun h => M.In ptr h))
@@ -173,7 +156,7 @@ Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
 Lemma refineRead {a : Type} (w : WhileL unit) (w' : a -> WhileL unit)
   (ptr : Ptr)
   (H0 : forall (s s' : S) (pre : pre (semantics w) s), post (semantics w) s pre tt s')
-  (H1 : pre (semantics w) ⊂ (fun s => {v : a | find s ptr = Some (dyn a v)}))
+  (H1 : pre (semantics w) ⊂ (fun s => exists v, find s ptr = Some (dyn a v)))
   (H2 : forall v, pre (semantics w) ⊂ (pre (semantics (w' v))))
   : w ⊑ Read _ a ptr w'.
 Proof.
@@ -260,17 +243,16 @@ Proof.
 Defined.
 
 (** Just a brief example showing how the language currently looks like **)
-Definition SWAP : WhileL unit.
-  apply (Spec _).
-  refine (Predicate _ (fun s => (prod {p : Ptr | M.In p s}
-                                     {q : Ptr | M.In q s})) _).
-  intros s [[P PinS] [Q QinS]] tt.
-  refine (fun s' => find s P = find s' Q /\ find s Q = find s' P).
+Definition SWAP (p q : Ptr) : WhileL unit.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => M.In p s /\ M.In q s) _).
+  intros s H t s'.
+  refine (find s p = find s' q /\ find s q = find s' p).
 Defined.
 
 (* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
 (* This definition is incorrect. *)
-Definition swapResult (a : Type) :
+Definition swapResult (P Q : Ptr) (a : Type) :
   let SetQinN (Q : Ptr) (s : Ptr -> WhileL unit) :=
       (Read _ a Q) (fun v => New _ _ v s) in
   let SetPinQ (P : Ptr) (Q : Ptr) (s : WhileL unit) :=
@@ -278,10 +260,11 @@ Definition swapResult (a : Type) :
   let SetNinP (P : Ptr) (N : Ptr) (s : WhileL unit) :=
       (Read _ a N) (fun v => Write _ P v s) in
   { P : Ptr & ( { Q : Ptr &
-  SWAP ⊑ SetQinN Q (fun N => SetPinQ P Q (SetNinP P N (Return _ tt))) })}.
+  SWAP P Q ⊑ SetQinN Q (fun N => SetPinQ P Q (SetNinP P N (Return _ tt))) })}.
 Proof.
   unfold SWAP; simpl.
-  
+  exists P; exists Q.
+  eapply refineFollowAssign.
   (*
   eapply refineFollowAssign' with (ptr := P).
                                  (Q' := fun s _ _ s' => find s Q = find s' N
