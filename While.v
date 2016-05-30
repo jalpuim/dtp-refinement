@@ -125,8 +125,7 @@ Proof.
   unfold_refinements; destruct cond; simpl;
   set (d := (fun s pres => pair pres I) : pre pt ⊂ pre ([fun s : S => (pre pt s * True)%type,
                                         fun (s : S) (pre : pre pt s * True) (s' : a) => post pt s (fst pre) s']));
-  apply (Refinement _ _ d);
-  intros; destruct_pt a; auto.
+  apply (Refinement _ _ d); intros; destruct_pt a; auto.
 Defined.
 
 Lemma refineWhilePT {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) : 
@@ -136,8 +135,8 @@ Lemma refineWhilePT {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) :
   pt ⊏ WhilePT inv cond body.
   Proof.
     intros pt body QH; simpl in *.
-    assert (d: pre pt ⊂ pre (WhilePT inv cond body)).
-    refine_simpl; repeat split; destruct_conjs; auto.
+    assert (d: pre pt ⊂ pre (WhilePT inv cond body)) by
+      (refine_simpl; repeat split; destruct_conjs; auto).
     apply (Refinement _ _ d).
     intros; repeat split; refine_simpl; destruct_conjs; now auto.
 Qed.
@@ -152,8 +151,14 @@ Lemma refineWhile {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop)
   Qed.
 
 Ltac destruct_units := destruct_all unit.
-Ltac refine_simpl := unfold pre, post, subset; intros; simpl in *; destruct_conjs; repeat split; repeat subst; destruct_units.
+Ltac refine_unfold := unfold pre, post, subset in *.
+Ltac refine_simpl := refine_unfold; intros; simpl in *; destruct_conjs; repeat split; repeat subst; destruct_units.
 Ltac semantic_trivial := unfold semantics, pre, post; simpl; destruct_conjs; repeat split; now intuition.
+Ltac exists_now :=
+   match goal with
+    | x : ?t |- { y : ?t & _} => exists x
+    | _ => idtac
+   end.
 
 Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
   (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre tt (update s ptr (dyn a x)))
@@ -165,23 +170,32 @@ Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
     apply (Refinement _ _ d); refine_simpl; destruct (semantics w); now eapply h.
   Qed.
   
-Definition subst {a : Type} (ptr : Ptr) (v : a) (s : S) : S :=  update s ptr (dyn a v).
+Lemma refineRead {a : Type} (w : WhileL unit) (w' : a -> WhileL unit)
+  (ptr : Ptr)
+  (H0 : forall (s s' : S) (pre : pre (semantics w) s), post (semantics w) s pre tt s')
+  (H1 : pre (semantics w) ⊂ (fun s => {v : a | find s ptr = Some (dyn a v)}))
+  (H2 : forall v, pre (semantics w) ⊂ (pre (semantics (w' v))))
+  : w ⊑ Read _ a ptr w'.
+Proof.
+  assert (d: pre (semantics w) ⊂ pre (semantics (Read _ a ptr w'))) 
+  by (refine_unfold; intros; destruct (semantics w); refine (existT _ (H1 s _) _); refine_simpl; now apply H2).
+  apply (Refinement _ _ d); refine_simpl; destruct (semantics w); now apply H0.
+  Unshelve. now trivial.
+Qed.
+  
+Definition subst {a : Type} (ptr : Ptr) (v : a) (s : S) : S := 
+   update s ptr (dyn a v).
 
 Definition refineFollowAssignPre {a : Type} (ptr : Ptr) (x : a) (P : Pow S)
            (Q Q' : forall (s : S), P s -> Pow S) :
   let w  := Spec unit ([P,fun s p _ s' => Q s p s']) in
   let w' := Spec unit ([P,fun s p _ s' => Q' s p s']) in
-  (forall s pres s', Q' s pres s' -> prod (Q s pres (subst ptr x s')) (M.In ptr s')) ->
+  forall (H : forall s pres s', Q' s pres s' -> prod (Q s pres (subst ptr x s')) (M.In ptr s')),
   pre (semantics w) ⊂ pre (semantics (w' ; Write unit ptr x (Return unit tt))).
-  intros w w' HQ.
-  refine_simpl.
-  unfold preConditionOf; simpl.
-  exists X.
-  intros s' v H'.
-  apply HQ in H' as [H' HIn].
-  exists HIn.
-  intros s'' v' H''.
-  apply I.
+Proof.
+  refine_simpl; exists_now.
+  intros; split; [ eapply (snd (H s _ _ _)) | trivial].
+  Unshelve. assumption. assumption.
 Defined.
 
 Lemma refineFollowAssign {a : Type} (ptr : Ptr) (x : a) (P : Pow S) 
@@ -195,10 +209,7 @@ Proof.
   set (d := refineFollowAssignPre _ _ _ _ _ HQ :
              pre (semantics w) ⊂
              pre (semantics (w' ; Write unit ptr x (Return unit tt)))).
-  apply (Refinement _ _ d); refine_simpl.
-  unfold subset, preConditionOf, postConditionOf in *.
-  simpl in *.
-  now apply HQ.
+  apply (Refinement _ _ d); refine_simpl; now apply HQ.
 Qed.
 
 Definition refineFollowAssignPre' {a : Type} (ptr : Ptr) (P : Pow S) 
@@ -209,15 +220,10 @@ Definition refineFollowAssignPre' {a : Type} (ptr : Ptr) (P : Pow S)
   (pre (semantics w) ⊂
       pre (semantics (bind w' (fun (v : a) => Write _ ptr v (Return _ tt))))).
 Proof.
-  intros w w' HQ.
-  refine_simpl.
-  unfold preConditionOf; simpl.
-  exists X.
-  intros s' v H'.
-  apply HQ in H' as [H' HIn].
-  exists HIn.
-  intros s'' v' H''.
-  apply I.
+  intros w w' HQ; refine_simpl; exists_now.
+  intros.
+  intros; split; [ eapply (snd (HQ s _ _ _ _)) | trivial].
+  Unshelve. assumption. assumption. assumption.
 Defined.
   
 Lemma refineFollowAssign' {a : Type} (ptr : Ptr) (P : Pow S) 
@@ -227,14 +233,9 @@ Lemma refineFollowAssign' {a : Type} (ptr : Ptr) (P : Pow S)
   (forall s pres v s', Q' s pres v s' -> prod (Q s pres (subst ptr v s')) (M.In ptr s')) ->
   w ⊑ (bind w' (fun v => Write _ ptr v (Return _ tt))).
 Proof.
-  intros w w' HQ.
-  unfold "⊑".
-  apply (Refinement _ _ (refineFollowAssignPre' _ _ _ _ HQ)); refine_simpl.
-  unfold subset, preConditionOf, postConditionOf in *.
-  simpl in *.
-  repeat destruct H2; subst.
-  eapply fst.
-  now eapply HQ. 
+  intros w w' HQ; refine_simpl.
+  apply (Refinement _ _ (refineFollowAssignPre' _ _ _ _ HQ)).
+  refine_simpl; now eapply HQ. 
 Qed.  
 
 Ltac refine_assign ptr x := eapply (refineAssign _ ptr x _ _).
@@ -257,23 +258,6 @@ Proof.
                                   pre (semantics ((w1; w2); w3))).
   apply (Refinement _ _ d); now trivial.
 Defined.
-
-Lemma refineRead {a : Type} (w : WhileL unit) (w' : a -> WhileL unit)
-  (ptr : Ptr)
-  (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre tt s)
-  (h' : pre (semantics w) ⊂ (fun s => M.In ptr s))
-  : w ⊑ Read _ a ptr w'.
-Proof.
-  assert (d: pre (semantics w) ⊂ pre (semantics (Read unit a ptr w'))).
-  destruct (semantics w); refine_simpl.
-  unfold subset in *.
-  apply h' in X.
-  eexists. 
-  intros t v H.
-  destruct (semantics (w' v)).
-  simpl.
-  
-Admitted.
 
 (** Just a brief example showing how the language currently looks like **)
 Definition SWAP : WhileL unit.
