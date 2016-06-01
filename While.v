@@ -242,7 +242,9 @@ Proof.
   apply (Refinement _ _ d); now trivial.
 Defined.
 
-(** Just a brief example showing how the language currently looks like **)
+(** Just a brief example showing how the language currently looks like 
+    Contains some testing definitions to be moved elsewhere once proven.
+**)
 Definition SWAP (p q : Ptr) : WhileL unit.
   refine (Spec _ _).
   refine (Predicate _ (fun s => M.In p s /\ M.In q s) _).
@@ -250,52 +252,74 @@ Definition SWAP (p q : Ptr) : WhileL unit.
   refine (find s p = find s' q /\ find s q = find s' p).
 Defined.
 
-(* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
-(* This definition is incorrect. *)
-Definition swapResult (P Q : Ptr) (a : Type) :
-  let SetQinN (Q : Ptr) (s : Ptr -> WhileL unit) :=
-      (Read _ a Q) (fun v => New _ _ v s) in
-  let SetPinQ (P : Ptr) (Q : Ptr) (s : WhileL unit) :=
-      (Read _ a P) (fun v => Write _ Q v s) in
-  let SetNinP (P : Ptr) (N : Ptr) (s : WhileL unit) :=
-      (Read _ a N) (fun v => Write _ P v s) in
-  { P : Ptr & ( { Q : Ptr &
-  SWAP P Q ⊑ SetQinN Q (fun N => SetPinQ P Q (SetNinP P N (Return _ tt))) })}.
+Lemma refineRead' {a : Type} (w : WhileL unit) (w' : a -> WhileL unit)
+  (ptr : Ptr)
+  (H0 : forall (s : S) v (pres : pre (semantics (w' v)) s) (pre : pre (semantics w) s),
+          post (semantics (w' v)) s pres tt ⊂ post (semantics w) s pre tt)
+  (H1 : pre (semantics w) ⊂ (fun s => exists v, find s ptr = Some (dyn a v)))
+  (H2 : forall v, pre (semantics w) ⊂ (pre (semantics (w' v))))
+  : w ⊑ Read _ a ptr w'.
 Proof.
-  unfold SWAP; simpl.
-  exists P; exists Q.
-  eapply refineFollowAssign.
-  (*
-  eapply refineFollowAssign' with (ptr := P).
-                                 (Q' := fun s _ _ s' => find s Q = find s' N
-                                                   /\ find s P = find s' Q
-                                                   /\ M.In P s' /\ M.In Q s' /\ M.In N s').
-  *)
+  assert (d: pre (semantics w) ⊂ pre (semantics (Read _ a ptr w'))) 
+  by (refine_unfold; intros; destruct (semantics w); refine (existT _ (H1 s _) _); refine_simpl; now apply H2).
+  apply (Refinement _ _ d); refine_simpl; destruct (semantics w); eauto.
+  Unshelve. now trivial.
+Qed.
+
+Lemma refineSplit {a : Type}
+      (w1 w2 : WhileL a)
+      (w3 : a -> WhileL a) :
+      w1 ⊑ w2 ->
+      bind w1 w3 ⊑ bind w2 w3.
+Proof.
+  intros.
 Admitted.
 
-(* Alternative spec *)
-Definition SWAP' (P : Ptr) (Q : Ptr) : WhileL unit.
-
-  apply (Spec _).
-  refine (Predicate _ (fun s => prod (M.In P s) (M.In Q s)) _).
+Lemma refineSplit' {a : Type}
+      (w1 w2 : WhileL a)
+      (w3 w4 : a -> WhileL a) :
+      w1 ⊑ bind w2 w3 ->
+      bind w1 w4 ⊑ bind w2 (fun x => bind (w3 x) w4).
+Proof.
   intros.
-  refine (fun s' => find s P = find s' Q /\ find s Q = find s' P).
-Defined.
+Admitted.
 
-Definition swapResult' (P : Ptr) (Q : Ptr) (a : Type) :
+Lemma refineSplit'' {a : Type} (P : Ptr)
+      (w1 : WhileL Ptr)
+      (w2 : Ptr -> WhileL unit) :
+      w1 ⊑ Read Ptr a P (fun v : a => New Ptr a v (fun p => Return _ p)) ->
+      bind w1 w2 ⊑ (Read unit a P (fun v : a => New unit a v w2)).
+Proof.
+  intros.
+Admitted.
+
+(* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
+Definition swapResult (P : Ptr) (Q : Ptr) (a : Type) :
   let SetQinN (s : Ptr -> WhileL unit) :=
       (Read _ a Q) (fun v => New _ _ v s) in
   let SetPinQ (s : WhileL unit) :=
       (Read _ a P) (fun v => Write _ Q v s) in
   let SetNinP (N : Ptr) (s : WhileL unit) :=
       (Read _ a N) (fun v => Write _ P v s) in
-  SWAP' P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
+  SWAP P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
 Proof.
+  simpl; unfold SWAP.  
+  apply (refineTrans (
+             bind (Spec Ptr ([fun s => M.In P s /\ M.In Q s /\ (exists N, M.In N s),
+                                      fun s _ _ s' => find s P = find s' Q /\
+                                                     find s Q = find s' P ]))  
+           (fun N : Ptr =>
+           Read unit a P
+             (fun v0 : a =>
+              Write unit Q v0
+                (Read unit a N
+                      (fun v1 : a => Write unit P v1 (Return unit tt))))))).
+  admit. (* TODO rest of proof to be continued here *)
+  apply refineSplit''.
+  Check refineRead. (* TODO refineRead definition should change *)
 Admitted.
   
 (** End of example **)
-
-(* Joao: I stopped here *)
 
 End Semantics.
 
