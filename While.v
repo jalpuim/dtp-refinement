@@ -284,14 +284,52 @@ Proof.
   intros.
 Admitted.
 
-Lemma refineSplit'' {a : Type} (P : Ptr)
-      (w1 : WhileL Ptr)
+Lemma bindAssocR {a b c : Type} :
+  forall (w1 : PT a) (w2 : a -> PT b) (w3 : b -> PT c),
+    (w1 ⟫= w2) ⟫= w3 ⊏ w1 ⟫= (fun x => (w2 x) ⟫= w3).
+Proof.
+Admitted.
+
+Lemma refineSplitPT {a b : Type} :
+  forall (w1 w3 : PT a) (w2 w4 : a -> PT b),
+  w1 ⊏ w3 ->
+  (forall x, w2 x ⊏ w4 x) ->
+  w1 ⟫= w2 ⊏ w3 ⟫= w4.
+Proof.
+Admitted.
+  
+Lemma refineSplitReadNew {a : Type} (P : Ptr) (w1 : PT Ptr)
       (w2 : Ptr -> WhileL unit) :
-      w1 ⊑ Read Ptr a P (fun v : a => New Ptr a v (fun p => Return _ p)) ->
-      bind w1 w2 ⊑ (Read unit a P (fun v : a => New unit a v w2)).
+      Spec _ w1 ⊑ Read Ptr a P (fun v : a => New Ptr a v (fun p => Return _ p)) ->
+      bind (Spec _ w1) w2 ⊑ (Read unit a P (fun v : a => New unit a v w2)).
 Proof.
   intros.
-Admitted.
+  unfold wrefines in *.
+  simpl in *.
+  apply (refineTransPT ((@ReadPT a P
+     ⟫= NewPT) ⟫= (fun p : Addr.t => semantics (w2 p)))).
+  apply refineSplitPT.
+  destruct X.
+  assert (d' : pre w1 ⊂ pre (@ReadPT a P ⟫= NewPT)).
+  destruct w1.
+  unfold subset in *; simpl in *.
+  intros s' pre'.
+  pose (d s' pre') as H.
+  destruct H.
+  exists x.
+  intros.
+  pose (s0 t v) as HH.
+  now destruct HH.
+  apply (Refinement _ _ d').
+  intros.
+  refine_simpl.
+  destruct w1.
+  apply s.
+  repeat eexists; eauto.
+  intros; apply refineReflPT.
+  apply bindAssocR.
+Defined.  
+  
 
 (* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
 Definition swapResult (P : Ptr) (Q : Ptr) (a : Type) :
@@ -303,7 +341,7 @@ Definition swapResult (P : Ptr) (Q : Ptr) (a : Type) :
       (Read _ a N) (fun v => Write _ P v s) in
   SWAP P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
 Proof.
-  simpl; unfold SWAP.  
+  simpl.
   apply (refineTrans (
              bind (Spec Ptr ([fun s => M.In P s /\ M.In Q s /\ (exists N, M.In N s),
                                       fun s _ _ s' => find s P = find s' Q /\
@@ -315,8 +353,12 @@ Proof.
                 (Read unit a N
                       (fun v1 : a => Write unit P v1 (Return unit tt))))))).
   admit. (* TODO rest of proof to be continued here *)
-  apply refineSplit''.
-  Check refineRead. (* TODO refineRead definition should change *)
+  apply refineSplitReadNew.
+  unfold wrefines.
+  assert (d : pre (semantics (SWAP P Q)) ⊂ pre (semantics (Read Ptr a Q (fun v : a => New Ptr a v (fun p : Ptr => Return Ptr p))))).
+  refine_simpl.
+  admit. (* this shouldn't be too hard *)
+  (* apply (Refinement _ _ d). *)
 Admitted.
   
 (** End of example **)
