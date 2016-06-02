@@ -61,7 +61,7 @@ Definition SkipPT {a : Type} : PT a :=
 
 Definition AssignPT {a : Type} : (Pow S) -> (S -> S) -> PT a := fun p f =>
   let assignPre := p in
-  let assignPost := fun s _ v s' => prod (s' = f s) (p s') in
+  let assignPost := fun s _ v s' => (s' = f s) /\ (p s') in
   [assignPre , assignPost].
 
 Definition SeqPT {a : Type} (pt1 pt2 : PT a) : PT a :=
