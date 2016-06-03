@@ -1,5 +1,6 @@
 Require Import Arith.
 Require Export FMapAVL.
+Require Import FSets.FMapFacts.
 Require Export Coq.Structures.OrderedType.
 Require Import Omega.
 Require Import String.
@@ -97,6 +98,10 @@ Definition find (h: heap) k := M.find k h.
 Definition update (h : heap) k v := M.add k v h.
 
 Definition empty : heap := M.empty Dynamic.
+
+Lemma read (a : Type) (h : heap) (k : Addr.t) : (exists v, M.MapsTo k (dyn a v) h) -> a.
+Admitted.
+
 
 (** Allocation **)
 
