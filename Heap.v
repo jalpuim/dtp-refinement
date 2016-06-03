@@ -99,9 +99,11 @@ Definition update (h : heap) k v := M.add k v h.
 
 Definition empty : heap := M.empty Dynamic.
 
-Lemma read (a : Type) (h : heap) (k : Addr.t) : (exists v, M.MapsTo k (dyn a v) h) -> a.
+Definition read {a : Type} (k : Addr.t) (h : heap) (H : exists v, M.MapsTo k (dyn a v) h) : a.
 Admitted.
 
+Definition readMaps {a : Type} (k : Addr.t) (v : a) (h : heap) (P : exists v, M.MapsTo k (dyn a v) h) (H : M.MapsTo k (dyn a v) h) : read k h P = v.
+Admitted.
 
 (** Allocation **)
 

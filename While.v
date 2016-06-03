@@ -18,7 +18,7 @@ Definition Ptr := Addr.t.
 Inductive WhileL (a : Type) : Type :=
   | New    : forall v, v -> (Ptr -> WhileL a) -> WhileL a
   | Read   : forall v, Ptr -> (v -> WhileL a) -> WhileL a
-  | Write : forall {v}, Ptr -> v -> WhileL a  -> WhileL a
+  | Write  : forall v, Ptr -> v -> WhileL a  -> WhileL a
   | While  : (S -> Prop) -> (S -> bool) -> WhileL a -> WhileL a -> WhileL a
   | Spec   : PT a -> WhileL a
   | Return : a -> WhileL a.
@@ -28,14 +28,19 @@ Notation "addr ≔ exp" := (Write id addr) (at level 52).
 Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
   match w with
     | New _ _ v k => BindPT (NewPT v) (fun p => semantics (k p))
+        (* let pre := fun s => True in *)
+        (* let post := fun s _ ptr s' =>  *)
+        (*               (forall p, p <> ptr -> find s p = find s' p) *)
+        (*               /\ find s' ptr = Some (dyn _ v) in *)
+        (* [pre , post] *)
+                                                            
     | Read _ _ ptr k => (* BindPT (ReadPT ptr) (fun v => semantics (k v)) *)
         let readPre := fun h => exists v, M.MapsTo ptr (dyn _ v) h in
-        let pre := fun s => {p : readPre s & pre (semantics (k (read _ s ptr p))) s} in
-        let post := fun s pres x s' => post (semantics (k (read _ s ptr (projT1 pres)))) s (projT2 pres) x s' in
+        let pre := fun s => {p : readPre s & pre (semantics (k (read ptr s p))) s} in
+        let post := fun s pres x s' => post (semantics (k (read ptr s (projT1 pres)))) s (projT2 pres) x s' in
         [pre , post]
-    | Write _ ptr v k => 
+    | Write _ _ ptr v k => 
         let writePre := fun s => M.In ptr s in
-        let writePost := fun s (p : M.In ptr s) s' => s' = update s ptr (dyn _ v) in
         let pre := fun s => writePre s /\ pre (semantics k) (update s ptr (dyn _ v)) in
         let post := fun s pres x s' => post (semantics k) (update s ptr (dyn _ v)) (proj2 pres) x s' in
         [pre , post]
@@ -61,7 +66,7 @@ Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : While
   match w with
   | New _ _ v c  => New _ _ v (fun p => bind (c p) k)
   | Read _ _ p c => Read _ _ p (fun v => bind (c v) k)
-  | Write _ p v c => Write _ p v (bind c k)
+  | Write _ _ p v c => Write _ _ p v (bind c k)
   | While _ Inv cond body c => While _ Inv cond (bind body k) (bind c k)
   | Spec _ pt => Spec _ (BindPT pt (fun x => semantics (k x)))
   | Return _ x => k x
@@ -73,7 +78,7 @@ Fixpoint isExecutable {a : Type} (w: WhileL a) : Prop :=
   match w with 
     | New _ _ _ k     => forall ptr, isExecutable (k ptr)
     | Read _ _ _ k    => forall v, isExecutable (k v)
-    | Write _ _ _ w   => isExecutable w
+    | Write _ _ _ _ w   => isExecutable w
     | While _ inv c b k => isExecutable b /\ isExecutable k
     | Spec _ pt       => False
     | Return _ a      => True
@@ -157,17 +162,46 @@ Lemma refineWhile {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop)
 Lemma readStep {a b : Type} (w : WhileL a) (w' : b -> WhileL a)
   (ptr : Ptr)
   (H : pre (semantics w) ⊂ pre (semantics (Read a b ptr w')))
-  (Q : forall s p x s', post (semantics (w' (read b s ptr (projT1 (H s p))))) s (projT2 (H s p)) x s' -> post (semantics w) s p x s')
+  (Q : forall s p x s', post (semantics (w' (read ptr s (projT1 (H s p))))) s (projT2 (H s p)) x s' -> post (semantics w) s p x s')
   : w ⊑ Read _ b ptr w'.
 Proof.
   exact (Refinement _ _ H Q).
 Qed.  
 
+Lemma readSpec {a b : Type} (spec : PT a) (w' : b -> WhileL a)
+  (ptr : Ptr) (v : b)
+  (H : pre (spec) ⊂ M.MapsTo ptr (dyn b v)) 
+  (Step :  Spec _ ([ fun s => pre spec s, fun s pres x s' => post spec s (pres) x s' ]) ⊑ w' v) :
+  Spec _ spec ⊑ Read _ b ptr w'.
+Proof.
+  eapply readStep.
+  Unshelve.
+  Focus 2.
+  simpl.
+  intros s H1.
+  refine (existT _ _ _).
+  Unshelve.
+  Focus 2.
+  exists v; now apply H.
+  destruct (Step).
+  simpl in *.
+  rewrite (readMaps ptr v ).
+  now apply d.
+  now apply H.
+  refine_simpl.
+  destruct spec.
+  destruct Step.
+  simpl in *.
+  apply s0.
+  rewrite (readMaps ptr v) in H0.
+  apply H0.
+Qed.  
+
 Lemma assignStep {a b : Type} (w w' : WhileL a) (ptr : Ptr) (v : b)
-  (h : pre (semantics w) ⊂ pre (semantics (Write _ ptr v w'))) 
+  (h : pre (semantics w) ⊂ pre (semantics (Write _ _ ptr v w'))) 
   (h' : forall (s : S)(p : pre (semantics w) s)  (x : a) (s' : S), 
     post (semantics w') (update s ptr (dyn b v)) (proj2 (h s p)) x s' -> post (semantics w) s p x s')
-  : w ⊑ Write _ ptr v w'.
+  : w ⊑ Write _ _ ptr v w'.
   Proof.
     exact (Refinement _ _ h h').
   Qed.
@@ -175,7 +209,7 @@ Lemma assignStep {a b : Type} (w w' : WhileL a) (ptr : Ptr) (v : b)
 Lemma refineAssign {a : Type} (w : WhileL unit) (ptr : Ptr) (x : a)
   (h : forall (s : S) (pre : pre (semantics w) s), post (semantics w) s pre tt (update s ptr (dyn a x)))
   (h' : pre (semantics w) ⊂ (fun h => M.In ptr h))
-  : w ⊑ Write _ ptr x (Return _ tt).
+  : w ⊑ Write _ _ ptr x (Return _ tt).
   Proof.
     eapply assignStep. Unshelve. Focus 2.
     refine_simpl; now apply h'.
@@ -190,7 +224,7 @@ Definition refineFollowAssignPre {a : Type} (ptr : Ptr) (x : a) (P : Pow S)
   let w  := Spec unit ([P,fun s p _ s' => Q s p s']) in
   let w' := Spec unit ([P,fun s p _ s' => Q' s p s']) in
   forall (H : forall s pres s', Q' s pres s' -> (Q s pres (subst ptr x s')) /\ (M.In ptr s')),
-  pre (semantics w) ⊂ pre (semantics (w' ; Write unit ptr x (Return unit tt))).
+  pre (semantics w) ⊂ pre (semantics (w' ; Write unit _ ptr x (Return unit tt))).
 Proof.
   refine_simpl; exists_now.
   intros; split; [ eapply (H s _ _ _) | trivial].
@@ -202,12 +236,12 @@ Lemma refineFollowAssign {a : Type} (ptr : Ptr) (x : a) (P : Pow S)
   let w  := Spec _ ([P,fun s p _ s' => Q s p s']) in
   let w' := Spec unit ([P,fun s p _ s' => Q' s p s']) in
   (forall s pres s', Q' s pres s' -> (Q s pres (subst ptr x s')) /\ (M.In ptr s')) ->
-  w ⊑ (w' ; Write _ ptr x (Return _ tt)).
+  w ⊑ (w' ; Write _ _ ptr x (Return _ tt)).
 Proof.
   intros w w' HQ.
   set (d := refineFollowAssignPre _ _ _ _ _ HQ :
              pre (semantics w) ⊂
-             pre (semantics (w' ; Write unit ptr x (Return unit tt)))).
+             pre (semantics (w' ; Write unit _ ptr x (Return unit tt)))).
   apply (Refinement _ _ d); refine_simpl; now apply HQ.
 Qed.
 
@@ -217,7 +251,7 @@ Definition refineFollowAssignPre' {a : Type} (ptr : Ptr) (P : Pow S)
   let w' := Spec _ ([P,Q']) in
   (forall s pres v s', Q' s pres v s' -> prod (Q s pres (subst ptr v s')) (M.In ptr s')) ->
   (pre (semantics w) ⊂
-      pre (semantics (bind w' (fun (v : a) => Write _ ptr v (Return _ tt))))).
+      pre (semantics (bind w' (fun (v : a) => Write _ _ ptr v (Return _ tt))))).
 Proof.
   intros w w' HQ; refine_simpl; exists_now.
   intros.
@@ -230,7 +264,7 @@ Lemma refineFollowAssign' {a : Type} (ptr : Ptr) (P : Pow S)
   let w  := Spec unit ([P,fun s pres _ s' => Q s pres s']) in
   let w' := Spec _ ([P,Q']) in
   (forall s pres v s', Q' s pres v s' -> prod (Q s pres (subst ptr v s')) (M.In ptr s')) ->
-  w ⊑ (bind w' (fun v => Write _ ptr v (Return _ tt))).
+  w ⊑ (bind w' (fun v => Write _ _ ptr v (Return _ tt))).
 Proof.
   intros w w' HQ; refine_simpl.
   apply (Refinement _ _ (refineFollowAssignPre' _ _ _ _ HQ)).
@@ -315,15 +349,17 @@ Definition wouterSwap (P : Ptr) (Q : Ptr) (a : Type) :
   let SetQinN (s : Ptr -> WhileL unit) :=
       (Read _ a Q) (fun v => New _ _ v s) in
   let SetPinQ (s : WhileL unit) :=
-      (Read _ a P) (fun v => Write _ Q v s) in
+      (Read _ a P) (fun v => Write _ _ Q v s) in
   let SetNinP (N : Ptr) (s : WhileL unit) :=
-      (Read _ a N) (fun v => Write _ P v s) in
+      (Read _ a N) (fun v => Write _ _ P v s) in
   SWAP P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
 Proof.
   intros.
   unfold SetQinN.
-  eapply readStep.
+  eapply readSpec.
   refine_simpl.
+  destruct H; auto.
+  
   (* Wouter: clearly need to use some lemmas about find... *)
 
 (*
