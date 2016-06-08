@@ -27,13 +27,14 @@ Notation "addr ≔ exp" := (Write id addr) (at level 52).
 
 Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
   match w with
-    | New _ _ v k => BindPT (NewPT v) (fun p => semantics (k p))
-        (* let pre := fun s => True in *)
-        (* let post := fun s _ ptr s' =>  *)
-        (*               (forall p, p <> ptr -> find s p = find s' p) *)
-        (*               /\ find s' ptr = Some (dyn _ v) in *)
-        (* [pre , post] *)
-                                                            
+    | New _ _ v k => (* BindPT (NewPT v) (fun p => semantics (k p)) *)
+        let pre := fun s => forall ptr, pre (semantics (k ptr)) s in 
+        let post := fun s pres v' s' => 
+                       let newPtr := alloc s in
+                       post (semantics (k newPtr)) s (pres newPtr) v' s' /\ 
+                       (forall p, p <> newPtr -> find s p = find s' p) 
+                       /\ find s' newPtr = Some (dyn _ v) in
+        [pre , post]                                                    
     | Read _ _ ptr k => (* BindPT (ReadPT ptr) (fun v => semantics (k v)) *)
         let readPre := fun h => exists v, M.MapsTo ptr (dyn _ v) h in
         let pre := fun s => {p : readPre s & pre (semantics (k (read ptr s p))) s} in
@@ -197,6 +198,39 @@ Proof.
   apply H0.
 Qed.  
 
+Lemma newStep {a b : Type} (w : WhileL a) (w' : Ptr -> WhileL a)
+  (v : b)
+  (H : pre (semantics w) ⊂ pre (semantics (New _ _ v w')))
+  (Q : forall (s : S) (x : pre (semantics w) s) (v' : a),
+   post (semantics (New _ _ v w')) s (H s x) v' ⊂ post (semantics w) s x v')
+  : w ⊑ New _ _ v w'.
+Proof.
+  exact (Refinement _ _ H Q).
+Qed.  
+
+Lemma newSpec {a b : Type} (spec : PT a) (w' : Ptr -> WhileL a) (v : b)
+  (Step : forall p, Spec _ spec ⊑ w' p) :
+  Spec _ spec ⊑ New _ b v w'.
+Proof.
+  eapply newStep.
+  Unshelve.
+  Focus 2.
+  refine_simpl.
+  intros ptr.
+  destruct spec.
+  destruct (Step ptr).
+  simpl in *.
+  apply d.
+  apply H.
+  simpl in *.
+  refine_simpl.
+  destruct spec.
+  destruct Step.
+  simpl in *.
+  apply s1.
+  apply H.
+Qed.
+
 Lemma assignStep {a b : Type} (w w' : WhileL a) (ptr : Ptr) (v : b)
   (h : pre (semantics w) ⊂ pre (semantics (Write _ _ ptr v w'))) 
   (h' : forall (s : S)(p : pre (semantics w) s)  (x : a) (s' : S), 
@@ -359,7 +393,7 @@ Proof.
   eapply readSpec.
   refine_simpl.
   destruct H; auto.
-  
+  admit.
   (* Wouter: clearly need to use some lemmas about find... *)
 
 (*
@@ -394,36 +428,73 @@ Proof.
   intros; apply refineReflPT.
   apply bindAssocR.
 Defined.  
-*)
+ *)
+
+Lemma newSpec' {a b : Type} (spec : PT a) (w' : Ptr -> WhileL a) (v : b)
+      (Step : forall p, Spec _ ([ fun s => prod (pre spec s) (M.In p s) ,
+                             fun s pres s' => post spec s (fst pres) s' ]) ⊑ w' p) :
+  Spec _ spec ⊑ New _ b v w'.
+Proof.
+  apply newSpec.
+  intros.
+  pose (Step p).
+  destruct spec; destruct w.
+  refine_simpl.
+  unfold wrefines; simpl in *.
+  destruct (semantics (w' p)).
+  assert (d' : Refinement.pre ([pre, p0]) ⊂ Refinement.pre ([pre0, p1])).
+  simpl. unfold subset. intros. eapply d.
+  split; auto. admit.
+  eapply (Refinement _ _ d').
+  refine_simpl.
+Admitted.
+  
+Lemma writeSpec {a b : Type} (spec : PT a) (w' : WhileL a)
+  (ptr : Ptr) (v : b)
+  (H : pre (spec) ⊂ M.In ptr)
+  (Step : Spec _ ([ fun s => pre spec (update s ptr (dyn _ v)),
+                    fun s pres x s' => post spec (update s ptr (dyn _ v)) (pres) x s' ]) ⊑ w') :
+  Spec _ spec ⊑ Write _ _ ptr v w'.
+Proof.
+  eapply assignStep.
+  Unshelve.
+  Focus 2.
+  refine_simpl.
+  destruct spec; auto.
+  destruct Step; destruct spec.
+  simpl in *; auto.
+  refine_simpl.
+Admitted.
 
 (* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
 Definition swapResult (P : Ptr) (Q : Ptr) (a : Type) :
   let SetQinN (s : Ptr -> WhileL unit) :=
       (Read _ a Q) (fun v => New _ _ v s) in
   let SetPinQ (s : WhileL unit) :=
-      (Read _ a P) (fun v => Write _ Q v s) in
+      (Read _ a P) (fun v => Write _ _ Q v s) in
   let SetNinP (N : Ptr) (s : WhileL unit) :=
-      (Read _ a N) (fun v => Write _ P v s) in
+      (Read _ a N) (fun v => Write _ _ P v s) in
   SWAP P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
 Proof.
-  simpl.
-  apply (refineTrans (
-             bind (Spec Ptr ([fun s => M.In P s /\ M.In Q s /\ (exists N, M.In N s),
-                                      fun s _ _ s' => find s P = find s' Q /\
-                                                     find s Q = find s' P ]))  
-           (fun N : Ptr =>
-           Read unit a P
-             (fun v0 : a =>
-              Write unit Q v0
-                (Read unit a N
-                      (fun v1 : a => Write unit P v1 (Return unit tt))))))).
-  admit. (* TODO rest of proof to be continued here *)
-  apply refineSplitReadNew.
-  unfold wrefines.
-  assert (d : pre (semantics (SWAP P Q)) ⊂ pre (semantics (Read Ptr a Q (fun v : a => New Ptr a v (fun p : Ptr => Return Ptr p))))).
+  intros.
+  unfold SetQinN.
+  eapply readSpec.
   refine_simpl.
-  admit. (* this shouldn't be too hard *)
-  (* apply (Refinement _ _ d). *)
+  admit.
+  eapply newSpec.
+  intro N.
+  unfold SetPinQ.
+  eapply readSpec.
+  refine_simpl.
+  admit.
+  eapply writeSpec.
+  refine_simpl; auto.
+  eapply readSpec.
+  refine_simpl. admit.
+  apply refineAssign; refine_simpl; auto.
+  admit.
+  admit.
+  admit.  
 Admitted.
   
 (** End of example **)
