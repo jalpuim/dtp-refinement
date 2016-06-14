@@ -186,6 +186,23 @@ Proof.
 Qed.
  *)
 
+Lemma readSpec' {a b : Type} (spec : PT a) (w' : b -> WhileL a)
+  (ptr : Ptr) (v : b)
+  (H : pre (spec) ⊂ M.MapsTo ptr (dyn b v)) 
+  (Step : forall v, Spec _ ([ fun s => prod (pre spec s)
+                                       (find s ptr = Some (dyn b v))
+                       , fun s pres x s' => post spec s (fst pres) x s' ]) ⊑ w' v) :
+  Spec _ spec ⊑ Read _ b ptr w'.
+Proof.
+  destruct (Step v) as [d h]; eapply readStep. Unshelve. Focus 2.
+  * refine_simpl; refine (existT _ (existT _ v (H s _)) _); apply d.
+    split; auto.
+    unfold M.MapsTo in H; apply M.Raw.Proofs.find_1;
+    [ apply M.is_bst | auto ].
+  * refine_simpl; now apply h in X.
+  Unshelve. assumption.
+Qed.
+
 Lemma newSpec' {a b : Type} (spec : PT a) (w : Ptr -> WhileL a) (v : b)
       (H : forall s, pre spec s -> pre spec (update s (alloc s) (dyn b v)))
       (H1 : forall s x v' s0,
@@ -233,6 +250,24 @@ Proof.
     now refine (h (update s ptr (dyn _ v)) (existT _ s p) x s' _).
 Qed.
 
+Lemma writeSpec' {a b : Type} (spec : PT a) (w : WhileL a) (v : b) (ptr : Ptr)
+      (H : forall s, pre spec s -> M.In ptr s)
+      (H1 : forall s, pre spec s -> pre spec (update s ptr (dyn b v)))
+      (H2 : forall s x v' s0,
+              post spec (update s ptr (dyn b v)) (H1 s x) v' s0 ->
+              post spec s x v' s0)
+      (Step : Spec _ ([ fun s => pre spec s
+                      , fun s pres v s' => post spec s pres v s' ]) ⊑ w) :
+  Spec _ spec ⊑ Write _ b ptr v w.
+Proof.
+  destruct Step as [d h]; eapply writeStep. Unshelve. Focus 2.
+  * refine_simpl; destruct spec.
+    now apply H.
+    apply d.
+    auto.
+  * refine_simpl; destruct spec; auto.
+Qed.
+    
 Lemma returnStep {a : Type} (w : WhileL a) (v : a)
   (H : forall (s : S) (pre : preConditionOf w s), postConditionOf w s pre v s) : 
   w ⊑ Return a v.
@@ -375,28 +410,42 @@ Definition swapResult (P : Ptr) (Q : Ptr) (a : Type) :
 Proof.
   intros.
   unfold SetQinN.
-  eapply readSpec. Unshelve.
+  eapply readSpec'.
   refine_simpl.
   destruct H0 as [dyn QMapsTo]; unfold M.MapsTo.
   destruct dyn.
   admit. (* we need typing information in our specs *)
+  intro vInQ.
   eapply newSpec'.
   refine_simpl.
   admit. (* provable via H *)
   admit. (* provable via H0 *)
   intro N; simpl.
   unfold SetPinQ.
-  eapply readSpec.
+  eapply readSpec'.
+  refine_simpl.
+  admit. (* we need typing information in our specs *)
+  intro vInP.
+  simpl.
+  eapply writeSpec'.
+  refine_simpl; auto.
+  simpl.
+  intros.
+  admit.
+  eapply readSpec'.
+  refine_simpl.
+  apply m.
+  refine_simpl.
+  eapply writeSpec'.
+  refine_simpl; auto.
   refine_simpl.
   admit.
-  eapply writeSpec.
-  refine_simpl; auto.
-  eapply readSpec.
-  refine_simpl. admit.
-  apply refineAssign; refine_simpl; auto.
+  admit.
+  simpl.
+  apply returnStep.
+  refine_simpl; unfold preConditionOf in pre; simpl in pre.
   admit.
   admit.
-  admit.  
 Admitted.
   
 (** End of example **)
