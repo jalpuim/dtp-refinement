@@ -28,9 +28,10 @@ Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
   match w with
     | New _ _ v k =>
       let pre := fun s => 
-                   { ptr : Ptr & prod (~M.In ptr s) (pre (semantics (k ptr)) s) } in 
+                  { ptr : Ptr & prod (~M.In ptr s)
+                              (pre (semantics (k ptr)) (update s ptr (dyn _ v))) } in 
       let post := fun s pres v' s' => 
-                    post (semantics (k (projT1 pres))) s (snd (projT2 pres)) v' s' in
+                    post (semantics (k (projT1 pres))) (update s (projT1 pres) (dyn _ v)) (snd (projT2 pres)) v' s' in
       
       [pre , post]                                                    
     | Read _ b ptr k =>
@@ -170,6 +171,7 @@ Proof.
   exact (Refinement _ _ H Q).
 Qed.  
 
+(*
 Lemma newSpec {a b : Type} (spec : PT a) (w : Ptr -> WhileL a) (v : b)
   (Step : forall p, Spec _ spec ⊑ w p) :
   (* You would expect this hypothesis to say something about p pointing to v... *)
@@ -181,6 +183,28 @@ Proof.
       [ apply allocFresh | apply d; assumption].
   * refine_simpl. destruct (Step (alloc s)) as [d h].
     now apply h.
+Qed.
+ *)
+
+Lemma newSpec' {a b : Type} (spec : PT a) (w : Ptr -> WhileL a) (v : b)
+      (H : forall s, pre spec s -> pre spec (update s (alloc s) (dyn b v)))
+      (H1 : forall s x v' s0,
+              post spec (update s (alloc s) (dyn b v)) (H s x) v' s0 ->
+              post spec s x v' s0)
+      (Step : forall p, Spec _ ([ fun s => prod (pre spec s)
+                                           (M.MapsTo p (dyn _ v) s)
+                           , fun s pres v s' => post spec s (fst pres) v s' ]) ⊑ w p) :
+  Spec _ spec ⊑ New _ b v w.
+Proof.
+  eapply newStep. Unshelve. Focus 2.
+  * refine_simpl;
+    exists (alloc s); split;
+    destruct (Step (alloc s)) as [d h];
+    [ apply allocFresh |
+      apply d; destruct spec; simpl in *; split;
+      [ auto | now apply M.Raw.Proofs.add_1 ] ].
+  * refine_simpl; destruct (Step (alloc s)) as [d h]; apply H1.
+    destruct spec; simpl in *; apply h in X; now simpl in X.
 Qed.
 
 Lemma writeStep {a b : Type} (w w' : WhileL a) (ptr : Ptr) (v : b)
@@ -351,11 +375,16 @@ Definition swapResult (P : Ptr) (Q : Ptr) (a : Type) :
 Proof.
   intros.
   unfold SetQinN.
-  eapply readSpec.
+  eapply readSpec. Unshelve.
   refine_simpl.
-  admit.
-  eapply newSpec.
-  intro N.
+  destruct H0 as [dyn QMapsTo]; unfold M.MapsTo.
+  destruct dyn.
+  admit. (* we need typing information in our specs *)
+  eapply newSpec'.
+  refine_simpl.
+  admit. (* provable via H *)
+  admit. (* provable via H0 *)
+  intro N; simpl.
   unfold SetPinQ.
   eapply readSpec.
   refine_simpl.
