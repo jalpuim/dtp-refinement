@@ -99,6 +99,17 @@ Definition update (h : heap) k v := M.add k v h.
 
 Definition empty : heap := M.empty Dynamic.
 
+(** Lemmas **)
+Lemma findUpdate (h : heap) (p : Addr.t) (d : Dynamic) :
+  find (update h p d) p = Some d.
+Admitted.
+
+Lemma findNupdate (h : heap) (p p' : Addr.t) : forall v,
+  find (update h p' v) p = find h p.
+Admitted.
+
+
+
 (** Allocation **)
 
 Fixpoint maxTree {e : Type} (t : M.Raw.tree e) (a : Addr.t) : Addr.t :=
@@ -149,3 +160,7 @@ Lemma allocFresh (h : heap) : ~ M.In (alloc h) h.
   now (intros F; apply H; apply M.Raw.Proofs.In_alt).
 Qed.
 
+
+Lemma findAlloc (h : heap) (v : Dynamic) (p : Addr.t) :
+ find (update h (alloc h) v) p = find h p.
+Admitted.

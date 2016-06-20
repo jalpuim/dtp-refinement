@@ -35,14 +35,14 @@ Fixpoint semantics {a : Type} (w: WhileL a) : PT a :=
       
       [pre , post]                                                    
     | Read _ b ptr k =>
-      let readPre := fun h => { v : b & M.MapsTo ptr (dyn _ v) h} in
+      let readPre := fun h => { v : b & find h ptr = Some (dyn b v)} in
       let pre := fun s => {p : readPre s & pre (semantics (k (projT1 p))) s} in
       let post := fun s pres x s' => 
                     post (semantics (k (projT1 (projT1 pres)))) s (projT2 pres) x s' in
       [pre , post]
-    | Write _ _ ptr v k => 
+    | Write _ b ptr v k => 
       let pre := fun s => 
-                   prod (M.In ptr s)
+                   prod ({v : b & find s ptr = Some (dyn b v)})
                         (pre (semantics k) (update s ptr (dyn _ v))) in
       let post := fun s pres x s' => 
                     post (semantics k) (update s ptr (dyn _ v)) (snd pres) x s' in
@@ -147,20 +147,21 @@ Lemma readStep {a b : Type} (w : WhileL a) (w' : b -> WhileL a)
 Proof.
   exact (Refinement _ _ H Q).
 Qed.  
-
+(*
 Lemma readSpec {a b : Type} (spec : PT a) (w' : b -> WhileL a)
   (ptr : Ptr) (v : b)
-  (H : pre (spec) ⊂ M.MapsTo ptr (dyn b v)) 
+  (H : forall s, pre (spec) s -> {v : b & find s ptr = Some (dyn b v)})
   (Step :  Spec _ ([ fun s => pre spec s, fun s pres x s' => post spec s (pres) x s' ]) ⊑ w' v) :
   Spec _ spec ⊑ Read _ b ptr w'.
 Proof.
   destruct Step as [d h]; eapply readStep. Unshelve. Focus 2.
-  * refine_simpl; refine (existT _ (existT _ v (H s _)) _).
-    now apply d.
+  * refine_simpl.
+    exists (H s X).
+    apply d.
   * refine_simpl; now apply h.
   Unshelve. assumption.
 Qed.
-
+*)
 Lemma newStep {a b : Type} (w : WhileL a) (w' : Ptr -> WhileL a)
   (v : b)
   (H : pre (semantics w) ⊂ pre (semantics (New _ _ v w')))
@@ -187,20 +188,31 @@ Qed.
  *)
 
 Lemma readSpec' {a b : Type} (spec : PT a) (w' : b -> WhileL a)
-  (ptr : Ptr) (v : b)
-  (H : pre (spec) ⊂ M.MapsTo ptr (dyn b v)) 
+  (ptr : Ptr) 
+  (H : forall s, pre (spec) s -> {v : b & find s ptr = Some (dyn b v)})
   (Step : forall v, Spec _ ([ fun s => prod (pre spec s)
-                                       (find s ptr = Some (dyn b v))
+                                  ({v : b & find s ptr = Some (dyn b v)})
                        , fun s pres x s' => post spec s (fst pres) x s' ]) ⊑ w' v) :
   Spec _ spec ⊑ Read _ b ptr w'.
 Proof.
-  destruct (Step v) as [d h]; eapply readStep. Unshelve. Focus 2.
-  * refine_simpl; refine (existT _ (existT _ v (H s _)) _); apply d.
-    split; auto.
-    unfold M.MapsTo in H; apply M.Raw.Proofs.find_1;
-    [ apply M.is_bst | auto ].
-  * refine_simpl; now apply h in X.
-  Unshelve. assumption.
+  eapply readStep. Unshelve. Focus 2.
+  * refine_simpl.
+    assert (valid : {v : b & find s ptr = Some (dyn b v)}) by now apply H.
+    exists valid.
+    destruct valid as [v P]; destruct (Step v) as [d h].
+    refine_simpl.
+    apply d; split; [ assumption | exists v; assumption ].
+  * intros s p x s' X; destruct spec; refine_simpl.
+    generalize X; generalize (H s p).
+    intros A.
+    intros B.
+    destruct A as [A1 A2].
+    simpl in *.
+    refine_simpl.
+    destruct (Step A1) as [d h].
+    refine_simpl.
+    apply (h s (p, (existT _ A1 A2))).
+    apply B.
 Qed.
 
 Lemma newSpec' {a b : Type} (spec : PT a) (w : Ptr -> WhileL a) (v : b)
@@ -209,7 +221,7 @@ Lemma newSpec' {a b : Type} (spec : PT a) (w : Ptr -> WhileL a) (v : b)
               post spec (update s (alloc s) (dyn b v)) (H s x) v' s0 ->
               post spec s x v' s0)
       (Step : forall p, Spec _ ([ fun s => prod (pre spec s)
-                                           (M.MapsTo p (dyn _ v) s)
+                                           (find s p = Some (dyn _ v))
                            , fun s pres v s' => post spec s (fst pres) v s' ]) ⊑ w p) :
   Spec _ spec ⊑ New _ b v w.
 Proof.
@@ -218,8 +230,9 @@ Proof.
     exists (alloc s); split;
     destruct (Step (alloc s)) as [d h];
     [ apply allocFresh |
-      apply d; destruct spec; simpl in *; split;
-      [ auto | now apply M.Raw.Proofs.add_1 ] ].
+      apply d; destruct spec; simpl in *; split].
+    auto.
+    apply findUpdate.
   * refine_simpl; destruct (Step (alloc s)) as [d h]; apply H1.
     destruct spec; simpl in *; apply h in X; now simpl in X.
 Qed.
@@ -235,7 +248,7 @@ Lemma writeStep {a b : Type} (w w' : WhileL a) (ptr : Ptr) (v : b)
 
 Lemma writeSpec {a b : Type} (spec : PT a) (w : WhileL a)
   (ptr : Ptr) (v : b)
-  (H : forall s, pre spec s -> M.In ptr s)
+  (H : forall s, pre spec s -> {v : b & find s ptr = Some (dyn b v)})
   (Step :  Spec _
     ([ fun s => {t : S & (pre spec t)},
        fun s pres x s' => 
@@ -251,7 +264,7 @@ Proof.
 Qed.
 
 Lemma writeSpec' {a b : Type} (spec : PT a) (w : WhileL a) (v : b) (ptr : Ptr)
-      (H : forall s, pre spec s -> M.In ptr s)
+      (H : forall s, pre spec s -> {v : b & find s ptr = Some (dyn b v)})
       (H1 : forall s, pre spec s -> pre spec (update s ptr (dyn b v)))
       (H2 : forall s x v' s0,
               post spec (update s ptr (dyn b v)) (H1 s x) v' s0 ->
@@ -280,9 +293,9 @@ Qed.
 (** Just a brief example showing how the language currently looks like 
     Contains some testing definitions to be moved elsewhere once proven.
 **)
-Definition SWAP (p q : Ptr) : WhileL unit.
+Definition SWAP {a : Type} (p q : Ptr): WhileL unit.
   refine (Spec _ _).
-  refine (Predicate _ (fun s => M.In p s /\ M.In q s) _).
+  refine (Predicate _ (fun s => prod {x : a | find s p = Some (dyn a x)} {y : a | find s q = Some (dyn a y)}) _).
   intros s H t s'.
   refine (find s p = find s' q /\ find s q = find s' p).
 Defined.
@@ -399,52 +412,62 @@ Defined.
   
 
 (* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
-Definition swapResult (P : Ptr) (Q : Ptr) (a : Type) :
+Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
   let SetQinN (s : Ptr -> WhileL unit) :=
       (Read _ a Q) (fun v => New _ _ v s) in
   let SetPinQ (s : WhileL unit) :=
       (Read _ a P) (fun v => Write _ _ Q v s) in
   let SetNinP (N : Ptr) (s : WhileL unit) :=
       (Read _ a N) (fun v => Write _ _ P v s) in
-  SWAP P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
+  @SWAP a P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
 Proof.
   intros.
   unfold SetQinN.
   eapply readSpec'.
   refine_simpl.
-  destruct H0 as [dyn QMapsTo]; unfold M.MapsTo.
-  destruct dyn.
-  admit. (* we need typing information in our specs *)
-  intro vInQ.
+  now exists s1.
+  intros v.             
   eapply newSpec'.
   refine_simpl.
-  admit. (* provable via H *)
-  admit. (* provable via H0 *)
+  rewrite <- H.
+  now rewrite findAlloc.
+  rewrite <- H0.
+  now rewrite findAlloc.
   intro N; simpl.
   unfold SetPinQ.
   eapply readSpec'.
   refine_simpl.
-  admit. (* we need typing information in our specs *)
+  now exists s1.
   intro vInP.
   simpl.
   eapply writeSpec'.
   refine_simpl; auto.
   simpl.
   intros.
-  admit.
+  now exists s3.
+  refine_simpl.
+  rewrite <- H.
+  now rewrite findNupdate.
+  rewrite <- H0.
+  now rewrite findNupdate.
   eapply readSpec'.
   refine_simpl.
-  apply m.
+  now exists v.
   refine_simpl.
   eapply writeSpec'.
   refine_simpl; auto.
+  now exists s3.
   refine_simpl.
+  rewrite <- H.
   admit.
-  admit.
+  rewrite <- H0.
+  now rewrite findNupdate.
   simpl.
   apply returnStep.
   refine_simpl; unfold preConditionOf in pre; simpl in pre.
+  destruct_conjs.
   admit.
+  destruct_conjs.
   admit.
 Admitted.
   
