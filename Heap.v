@@ -87,6 +87,8 @@ End Addr.
 (** Heaps **)
 
 Module M := FMapAVL.Make(Addr).
+Module MFacts := WFacts_fun(Addr)(M).
+Import MFacts.
 
 Inductive Dynamic : Type :=
   | dyn : forall a, a -> Dynamic.
@@ -102,13 +104,15 @@ Definition empty : heap := M.empty Dynamic.
 (** Lemmas **)
 Lemma findUpdate (h : heap) (p : Addr.t) (d : Dynamic) :
   find (update h p d) p = Some d.
-Admitted.
+Proof. 
+  apply M.find_1; now apply M.add_1.
+Qed.
 
-Lemma findNupdate (h : heap) (p p' : Addr.t) : forall v,
-  find (update h p' v) p = find h p.
-Admitted.
-
-
+Lemma findNupdate (h : heap) (p p' : Addr.t) (H : p <> p') :
+  forall v, find (update h p' v) p = find h p.
+Proof.
+  intro v; unfold find, update; apply add_neq_o; auto.
+Qed.
 
 (** Allocation **)
 
@@ -160,7 +164,10 @@ Lemma allocFresh (h : heap) : ~ M.In (alloc h) h.
   now (intros F; apply H; apply M.Raw.Proofs.In_alt).
 Qed.
 
-
 Lemma findAlloc (h : heap) (v : Dynamic) (p : Addr.t) :
- find (update h (alloc h) v) p = find h p.
-Admitted.
+  M.In p h ->
+  find (update h (alloc h) v) p = find h p.
+Proof.
+  intro HIn; unfold find; apply add_neq_o.
+  unfold not; intros; subst; now apply allocFresh in HIn.
+Qed.
