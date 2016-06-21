@@ -106,8 +106,7 @@ Ltac destruct_pts :=
     | pt : ?PT _ |- _ => destruct pt
   end.
 Ltac refine_simpl := 
-  refine_unfold; intros; simpl in *; destruct_conjs; 
-  repeat split; repeat subst; simpl in *.
+  refine_unfold; intros; simpl in *; destruct_conjs; simpl in *.
 Ltac semantic_trivial := 
   unfold semantics, pre, post; simpl; destruct_conjs; repeat split; now intuition.
 Ltac exists_now :=
@@ -215,6 +214,28 @@ Proof.
     apply B.
 Qed.
 
+Lemma readSpec'' {a b : Type} (spec : PT a) (w' : b -> WhileL a)
+  (ptr : Ptr)
+  (H : pre (spec) ⊂ pre (semantics (Read a b ptr w')))
+  (Q : forall s p x s', 
+         post (semantics (w' (projT1 (projT1 (H s p))))) s (projT2 (H s p)) x s' 
+         -> post (spec) s p x s')
+  : Spec _ spec ⊑ Read _ b ptr w'.
+Proof.
+  exact (Refinement _ _ H Q).
+Qed.  
+
+
+(* Lemma readSpec''' {a b : Type} (spec : PT a) (w' : b -> WhileL a) *)
+(*   (ptr : Ptr) *)
+(*   (H : forall s, pre (spec) s -> {v : b & find s ptr = Some (dyn b v)}) *)
+(*   (Step : forall v, Spec _ ([ fun s => prod (pre spec s) *)
+(*                                   ({v : b & find s ptr = Some (dyn b v)}) *)
+(*                        , fun s pres x s' => find s ptr = Some (dyn b v) -> post spec s (fst pres) x s' ]) ⊑ w' v) : *)
+(*   Spec _ spec ⊑ Read _ b ptr w'. *)
+  
+
+
 Lemma newSpec' {a b : Type} (spec : PT a) (w : Ptr -> WhileL a) (v : b)
       (H : forall s, pre spec s -> pre spec (update s (alloc s) (dyn b v)))
       (H1 : forall s x v' s0,
@@ -256,7 +277,7 @@ Lemma writeSpec {a b : Type} (spec : PT a) (w : WhileL a)
   Spec _ spec ⊑ Write _ b ptr v w.
 Proof.
   destruct Step as [d h]; eapply writeStep. Unshelve. Focus 2.
-  * refine_simpl; destruct spec; [ now apply H | apply d; now exists s].
+  * refine_simpl; destruct spec; split; [ now apply H | apply d; now exists s].
   * refine_simpl.
     destruct spec.
     destruct (semantics w).
@@ -275,18 +296,45 @@ Lemma writeSpec' {a b : Type} (spec : PT a) (w : WhileL a) (v : b) (ptr : Ptr)
 Proof.
   destruct Step as [d h]; eapply writeStep. Unshelve. Focus 2.
   * refine_simpl; destruct spec.
-    now apply H.
-    apply d.
-    auto.
-  * refine_simpl; destruct spec; auto.
-Qed.
+Admitted.
+
+(* Lemma writeSpec'' {a b : Type} (ptr : Ptr) (v : b) (spec : PT a) (w : WhileL a)  *)
+(*       (*H1 : forall s, pre spec s -> *) *)
+(*       (Pre : forall s, pre spec s -> prod ({v : b & find s ptr = Some (dyn b v)}) *)
+(*                                          (pre spec (update s ptr (dyn _ v)))) *)
+(*       (Post :  *)
+(*       (* (H2 : forall s pres y s', *) *)
+(*       (*         post spec (update s ptr (dyn b v)) pres y s' -> *) *)
+(*       (*         post spec s pres y s') *) *)
+(*       (Step : Spec _ ([ fun s => pre spec (update s ptr (dyn b v)) *)
+(*                       , fun s pres r s' => post spec (update s ptr (dyn b v)) pres r s' ]) ⊑ w) : *)
+(*   Spec _ spec ⊑ Write _ b ptr v w. *)
+(* Proof. *)
+(*   destruct Step as [d h]; destruct spec; eapply writeStep. Unshelve. Focus 2. *)
+(*   * refine_simpl. *)
+(*     now apply H1. *)
+(*     now apply H1. *)
+(*   * refine_simpl. *)
+    
+(* Qed. *)
+
+
+Lemma writeSpec''' {a b : Type} (ptr : Ptr) (v : b) (spec : PT a) (w' : WhileL a) 
+  (d : pre spec ⊂ pre (semantics (Write _ _ ptr v w'))) 
+  (h : forall (s : S)(p : pre spec s)  (x : a) (s' : S), 
+    post (semantics w') (update s ptr (dyn b v)) (snd (d s p)) x s' -> post spec s p x s')
+  : Spec _ spec ⊑ Write _ _ ptr v w'.
+  Proof.
+    exact (Refinement _ _ d h).
+  Qed.
     
 Lemma returnStep {a : Type} (w : WhileL a) (v : a)
   (H : forall (s : S) (pre : preConditionOf w s), postConditionOf w s pre v s) : 
   w ⊑ Return a v.
 Proof.
-  eapply Refinement. refine_simpl; apply H.
-  Unshelve. refine_simpl.
+  eapply Refinement; refine_simpl. 
+  subst; now apply H.
+  Unshelve. now refine_simpl.
 Qed.
 
 
@@ -423,8 +471,20 @@ Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
 Proof.
   intros.
   unfold SetQinN.
-  eapply readSpec'.
+  eapply readSpec''.
+  Unshelve.
+  Focus 2.
   refine_simpl.
+  exists (existT _ s1 H).
+  refine_simpl.
+  exists (alloc s).
+  split.
+  apply 
+  refine_unfold.
+  intros.
+  simpl in *.
+  destruct X as [X1 X2].
+
   now exists s1.
   intros v.             
   eapply newSpec'.
@@ -440,10 +500,22 @@ Proof.
   now exists s1.
   intro vInP.
   simpl.
-  eapply writeSpec'.
+  eapply (writeSpec''' Q vInP _ _).
+  Unshelve.
+  Focus 2.
   refine_simpl; auto.
+  exists s1.
+  now rewrite findNupdate.
+  exists s0; now rewrite findNupdate.
+  exists s0; now rewrite findNupdate.
+  refine_simpl.
+  rewrite findNupdate.
+  rewrite
   simpl.
   intros.
+  rewrite findNupdate.
+  rewrite findUpdate.
+  
   now exists s3.
   refine_simpl.
   rewrite <- H.
@@ -452,23 +524,53 @@ Proof.
   now rewrite findNupdate.
   eapply readSpec'.
   refine_simpl.
-  now exists v.
+  exists v.
+  now rewrite findNupdate in e.
   refine_simpl.
-  eapply writeSpec'.
+  eapply (writeSpec'' P v0).
   refine_simpl; auto.
-  now exists s3.
+  exists s3.
+  now rewrite findNupdate in H0.
   refine_simpl.
   rewrite <- H.
+  rewrite findNupdate in H.
+  rewrite findUpdate in H.
+  rewrite findNupdate.
+  rewrite findNupdate.
+  rewrite findUpdate.
+  rewrite findUpdate in H0.
+  rewrite findUpdate in *.
+  rewrite findNupdate in *.
+  rewrite H.  
+  
   admit.
   rewrite <- H0.
-  now rewrite findNupdate.
-  simpl.
+  rewrite findUpdate.
+  now rewrite findUpdate.
   apply returnStep.
   refine_simpl; unfold preConditionOf in pre; simpl in pre.
   destruct_conjs.
-  admit.
+  rewrite findNupdate.
+  rewrite findUpdate.
   destruct_conjs.
   admit.
+  destruct_conjs.
+  rewrite findUpdate in *.
+  rewrite findNupdate in *.
+  rewrite findUpdate in *.
+  admit.
+  Unshelve.
+  refine_simpl.
+  exists s1.
+  rewrite <- H0.
+  now rewrite findNupdate.
+  exists s0; now rewrite findNupdate.
+  exists s0; now rewrite findNupdate.
+  refine_simpl.
+  exists s2; now rewrite findNupdate.
+  exists vInP; now rewrite findUpdate.
+  exists vInP; now rewrite findUpdate.
+  
 Admitted.
   
 (** End of example **)
