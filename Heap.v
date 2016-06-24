@@ -114,6 +114,16 @@ Proof.
   intro v; unfold find, update; apply add_neq_o; auto.
 Qed.
 
+Lemma findIn : forall ptr s a v,
+  find s ptr = Some (dyn a v) ->
+  M.In (elt:=Dynamic) ptr s.
+Proof.
+  unfold find; intros.
+  apply MFacts.in_find_iff.
+  unfold not; intros; auto.
+  rewrite H0 in H; inversion H.
+Qed.
+
 (** Allocation **)
 
 Fixpoint maxTree {e : Type} (t : M.Raw.tree e) (a : Addr.t) : Addr.t :=

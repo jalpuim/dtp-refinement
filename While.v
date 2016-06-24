@@ -194,12 +194,11 @@ Qed.
 
 Lemma newSpec {a b : Type} (spec : PT a) (w : Ptr -> WhileL a) (v : b)
       (H : forall s, pre spec s -> pre spec (update s (alloc s) (dyn b v)))
-      (H1 : forall s x v' s0,
-              post spec (update s (alloc s) (dyn b v)) (H s x) v' s0 ->
-              post spec s x v' s0)
-      (Step : forall p, Spec _ ([ fun s => prod (pre spec s)
-                                           (find s p = Some (dyn _ v))
-                           , fun s pres v s' => post spec s (fst pres) v s' ]) ⊑ w p) :
+      (Step : forall p,
+                Spec _ ([ fun s => { t : S & prod (pre spec t)
+                                            (prod (forall p', M.In p' t -> p <> p')
+                                                  (s = (update t p (dyn b v)))) }
+                        , fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s' ]) ⊑ w p) :
   Spec _ spec ⊑ New _ b v w.
 Proof.
   eapply newStep. Unshelve. Focus 2.
@@ -207,11 +206,17 @@ Proof.
     exists (alloc s); split;
     destruct (Step (alloc s)) as [d h];
     [ apply allocFresh |
-      apply d; destruct spec; simpl in *; split].
-    auto.
-    apply findUpdate.
-  * refine_simpl; destruct (Step (alloc s)) as [d h]; apply H1.
-    destruct spec; simpl in *; apply h in X; now simpl in X.
+      apply d; destruct spec; simpl in * ].
+    exists s.
+    repeat split; auto.
+    unfold not; intros p' HIn HEq; subst; now apply allocFresh in HIn. 
+  * refine_simpl.
+    destruct spec.
+    destruct (Step (alloc s)).
+    destruct (semantics (w (alloc s))).
+    simpl in *.
+    apply s1 in X.
+    now simpl in X.
 Qed.
 
 Lemma writeStep {a b : Type} (w w' : WhileL a) (ptr : Ptr) (v : b)
@@ -369,7 +374,6 @@ Defined.
 (*   eapply (Refinement _ _ d'). *)
 (*   refine_simpl. *)
 (* Admitted. *)
-  
 
 (* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
 Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
@@ -389,28 +393,35 @@ Proof.
   intros v.             
   eapply newSpec.
   refine_simpl.
-  rewrite <- H.
+  exists s0; rewrite findAlloc; [ auto | now apply findIn in H0 ].
+  exists s1; rewrite findAlloc; [ auto | now apply findIn in H ].
+  rewrite <- e.
   rewrite findAlloc; auto.
   apply MFacts.in_find_iff; unfold not; intro HH;
-  unfold find in H2; rewrite H2 in HH; inversion HH.
-  rewrite <- H0.
-  rewrite findAlloc; auto.
-  apply MFacts.in_find_iff; unfold not; intro HH;
-  unfold find in H1; rewrite H1 in HH; inversion HH.  
+  unfold find in e; rewrite e in HH; inversion HH.
   intro N; simpl.
   unfold SetPinQ.
   eapply readSpec.
   refine_simpl.
-  now exists s0.
+  exists s0.
+  rewrite findNupdate; auto.
+  unfold not; intro HH; subst; apply n with (p' := N); auto.
+  now apply findIn in H0.
   intro vInP.
   simpl.
   eapply writeSpec.
   refine_simpl; eauto.
+  exists s2.
+  rewrite findNupdate; auto.
+  unfold not; intro HH; subst; apply n with (p' := N); auto.
+  now apply findIn in H.  
   eapply readSpec.
   refine_simpl.
   exists v.
   rewrite findNupdate; auto.
-  admit. (* this should be added to our context *)
+  now rewrite findUpdate.
+  unfold not; intro HH; subst; apply n with (p' := Q); auto.
+  now apply findIn in H.  
   refine_simpl.
   eapply writeSpec.
   refine_simpl; auto.
@@ -421,20 +432,26 @@ Proof.
   refine_simpl; unfold preConditionOf in pre; simpl in pre.
   destruct_conjs.
   simpl; subst.
-  rewrite e2.
-  rewrite findNupdate; auto.
-  symmetry; now apply MFacts.add_eq_o.
+  rewrite findNupdate.
+  rewrite findUpdate.
+  rewrite <- e2.
+  rewrite findNupdate.
+  reflexivity.
+  unfold not; intro HH; subst; apply n with (p' := N); auto.
+  now apply findIn in H0.  
+  auto.
   destruct_conjs.
   simpl; subst.
   rewrite e4.
-  symmetry.
-  unfold find, update; rewrite MFacts.add_eq_o; auto.
-  unfold find, update in *; rewrite MFacts.add_neq_o in e0.
+  rewrite findUpdate.
   rewrite <- e0.
-  now rewrite e3.
-  admit. (* same admit as above *)
-Admitted.
-  
+  rewrite findNupdate.
+  now rewrite findUpdate.
+  unfold not; intro HH; subst; apply n with (p' := Q); auto.
+  now apply findIn in H.  
+Qed.
+
+
 (** End of example **)
 
 
