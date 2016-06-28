@@ -108,11 +108,14 @@ Proof.
   apply M.find_1; now apply M.add_1.
 Qed.
 
-Lemma findNupdate (h : heap) (p p' : Addr.t) (H : p <> p') :
+Lemma findNUpdate (h : heap) (p p' : Addr.t) (H : p <> p') :
   forall v, find (update h p' v) p = find h p.
 Proof.
   intro v; unfold find, update; apply add_neq_o; auto.
 Qed.
+
+Hint Resolve findUpdate findNUpdate.
+
 
 (** Allocation **)
 
@@ -159,15 +162,43 @@ Lemma isLeast (t : heap) : forall a, M.Raw.lt_tree (maxHeap t a) (M.this t).
     * assumption. 
   Qed.
     
-Lemma allocFresh (h : heap) : ~ M.In (alloc h) h.
+Lemma allocNotIn (h : heap) : ~ M.In (alloc h) h.
   assert (H : ~ M.Raw.In (alloc h) (M.this h)) by apply M.Raw.Proofs.lt_tree_not_in, isLeast.
   now (intros F; apply H; apply M.Raw.Proofs.In_alt).
 Qed.
+
+Lemma allocFresh (h : heap) : find h (alloc h) = None.
+Admitted.
 
 Lemma findAlloc (h : heap) (v : Dynamic) (p : Addr.t) :
   M.In p h ->
   find (update h (alloc h) v) p = find h p.
 Proof.
   intro HIn; unfold find; apply add_neq_o.
-  unfold not; intros; subst; now apply allocFresh in HIn.
+  unfold not; intros; subst; now apply allocNotIn in HIn.
 Qed.
+
+Hint Resolve allocFresh findAlloc.
+
+Lemma allocDiff (v : Dynamic) (h : heap) (ptr : Addr.t) :
+  find h ptr = Some v -> 
+  ptr <> alloc h.
+Admitted.
+
+Lemma allocDiff' (v : Dynamic) (h : heap) (ptr : Addr.t) :
+  find h ptr = Some v -> 
+  alloc h <> ptr.
+Admitted.
+
+Lemma someIn (v : Dynamic) (h : heap) (ptr : Addr.t) :
+  find h ptr = Some v -> M.In ptr h.
+Admitted.
+
+Lemma heapGrows {a b: Type} (s : heap) (x : a) (y : b) (ptr : Addr.t) :
+  find s ptr = Some (dyn a x) ->
+  {z : a | find (update s (alloc s) (dyn b y)) ptr = Some (dyn a z)}.
+  Proof.
+    now (intros; exists x; (rewrite findNUpdate; [ | apply (allocDiff (dyn a x))])).
+Qed.
+
+Hint Resolve allocDiff heapGrows.
