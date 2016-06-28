@@ -193,8 +193,32 @@ Proof.
 Qed.
 
 
-
-
+Lemma newSpec {a b : Type} (spec : PT a) (w : Ptr -> WhileL a) (v : b)
+      (H : forall s, pre spec s -> pre spec (update s (alloc s) (dyn b v)))
+      (Step : forall p,
+                Spec _ ([ fun s => { t : S & prod (pre spec t)
+                                            (prod (forall p', M.In p' t -> p <> p')
+                                                  (s = (update t p (dyn b v)))) }
+                        , fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s' ]) ⊑ w p) :
+  Spec _ spec ⊑ New _ b v w.
+Proof.
+  eapply newStep. Unshelve. Focus 2.
+  * refine_simpl;
+    exists (alloc s); split;
+    destruct (Step (alloc s)) as [d h];
+    [ apply allocFresh |
+      apply d; destruct spec; simpl in * ].
+    exists s.
+    repeat split; auto.
+    unfold not; intros p' HIn HEq; subst. apply (allocNotIn _ HIn).
+  * refine_simpl.
+    destruct spec.
+    destruct (Step (alloc s)).
+    destruct (semantics (w (alloc s))).
+    simpl in *.
+    apply s1 in X.
+    now simpl in X.
+Qed.
 
 Lemma writeStep {a b : Type} (w w' : WhileL a) (ptr : Ptr) (v : b)
   (d : pre (semantics w) ⊂ pre (semantics (Write _ _ ptr v w'))) 
@@ -223,34 +247,34 @@ Proof.
     now simpl in p2.
 Qed.
 
-Lemma newSpec {a b : Type} (spec : PT a) (w : Ptr -> WhileL a) (v : b)
-      (H : forall s, pre spec s -> pre spec (update s (alloc s) (dyn b v)))
-      (H1 : forall s x v' s0,
-              post spec (update s (alloc s) (dyn b v)) (H s x) v' s0 ->
-              post spec s x v' s0)
-      (Step : forall p, 
-                Spec _ ([ fun s => 
-                            {t : S & prod (pre spec s) 
-                                     (prod (s = update t p (dyn b v))
-                                           (p = alloc t))
-                                     }
-                           , fun s pres v s' => post spec s (fst (projT2 pres)) v s' ]) ⊑ w p) :
-  Spec _ spec ⊑ New _ b v w.
-Proof.
-  eapply newStep. Unshelve. Focus 2.
-  * refine_simpl.
-    exists (alloc s); split; [ apply allocFresh | ].
-    destruct (Step (alloc s)) as [d h].
-    apply d.
-    destruct spec.
-    refine_simpl.
-    exists s.
-    split.
-    now apply H.
-    split; [ now trivial | reflexivity].
-  * refine_simpl; destruct (Step (alloc s)) as [d h]; apply H1.
-    destruct spec; simpl in *; apply h in X; now simpl in X.
-Qed.
+(* Lemma newSpec {a b : Type} (spec : PT a) (w : Ptr -> WhileL a) (v : b) *)
+(*       (H : forall s, pre spec s -> pre spec (update s (alloc s) (dyn b v))) *)
+(*       (H1 : forall s x v' s0, *)
+(*               post spec (update s (alloc s) (dyn b v)) (H s x) v' s0 -> *)
+(*               post spec s x v' s0) *)
+(*       (Step : forall p,  *)
+(*                 Spec _ ([ fun s =>  *)
+(*                             {t : S & prod (pre spec s)  *)
+(*                                      (prod (s = update t p (dyn b v)) *)
+(*                                            (p = alloc t)) *)
+(*                                      } *)
+(*                            , fun s pres v s' => post spec s (fst (projT2 pres)) v s' ]) ⊑ w p) : *)
+(*   Spec _ spec ⊑ New _ b v w. *)
+(* Proof. *)
+(*   eapply newStep. Unshelve. Focus 2. *)
+(*   * refine_simpl. *)
+(*     exists (alloc s); split; [ apply allocFresh | ]. *)
+(*     destruct (Step (alloc s)) as [d h]. *)
+(*     apply d. *)
+(*     destruct spec. *)
+(*     refine_simpl. *)
+(*     exists s. *)
+(*     split. *)
+(*     now apply H. *)
+(*     split; [ now trivial | reflexivity]. *)
+(*   * refine_simpl; destruct (Step (alloc s)) as [d h]; apply H1. *)
+(*     destruct spec; simpl in *; apply h in X; now simpl in X. *)
+(* Qed. *)
 
 
 Lemma returnStep {a : Type} (w : WhileL a) (v : a)
@@ -282,83 +306,83 @@ Defined.
   
 
 (* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
-Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
-  let SetQinN (s : Ptr -> WhileL unit) :=
-      (Read _ a Q) (fun v => New _ _ v s) in
-  let SetPinQ (s : WhileL unit) :=
-      (Read _ a P) (fun v => Write _ _ Q v s) in
-  let SetNinP (N : Ptr) (s : WhileL unit) :=
-      (Read _ a N) (fun v => Write _ _ P v s) in
-  @SWAP a P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
-Proof.
-  intros.
-  unfold SetQinN.
-  eapply readSpec; refine_simpl.
-  now exists s1.
-  eapply newSpec. refine_simpl.
-  rewrite <- H.
-  rewrite findAlloc; auto.
-  apply MFacts.in_find_iff; unfold not; intro HH;
-  unfold find in H2; rewrite H2 in HH; inversion HH.
-  rewrite <- H0.
-  rewrite findNUpdate.
-  reflexivity.
-  eapply allocDiff.
-  apply H1.
+(* Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) : *)
+(*   let SetQinN (s : Ptr -> WhileL unit) := *)
+(*       (Read _ a Q) (fun v => New _ _ v s) in *)
+(*   let SetPinQ (s : WhileL unit) := *)
+(*       (Read _ a P) (fun v => Write _ _ Q v s) in *)
+(*   let SetNinP (N : Ptr) (s : WhileL unit) := *)
+(*       (Read _ a N) (fun v => Write _ _ P v s) in *)
+(*   @SWAP a P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))). *)
+(* Proof. *)
+(*   intros. *)
+(*   unfold SetQinN. *)
+(*   eapply readSpec; refine_simpl. *)
+(*   now exists s1. *)
+(*   eapply newSpec. refine_simpl. *)
+(*   rewrite <- H. *)
+(*   rewrite findAlloc; auto. *)
+(*   apply MFacts.in_find_iff; unfold not; intro HH; *)
+(*   unfold find in H2; rewrite H2 in HH; inversion HH. *)
+(*   rewrite <- H0. *)
+(*   rewrite findNUpdate. *)
+(*   reflexivity. *)
+(*   eapply allocDiff. *)
+(*   apply H1. *)
   
-  intros T; eapply readSpec.
-  refine_simpl.
-  now exists s0.
-  intro vInP.
-  simpl.
-  eapply writeSpec.
-  refine_simpl; eauto.
-  eapply readSpec.
-  refine_simpl.
-  exists v.
-  rewrite findNUpdate.
-  rewrite findUpdate.
-  reflexivity.
-  rewrite findAlloc in H.
-  eapply (allocDiff' _ _ _ H).
-  admit.
-  refine_simpl.
-  eapply writeSpec.
-  refine_simpl; auto.
-  exists vInP.
-  rewrite findNUpdate; auto.
-  apply returnStep; refine_simpl.
-  unfold preConditionOf in pre; simpl in pre.
-  destruct_conjs.
-  simpl; subst.
-  rewrite e2.
-  rewrite findNUpdate; auto.
-  unfold preConditionOf in *.
-  simpl in *; subst.
-  destruct_conjs.
-  simpl.
-  subst. 
-  rewrite findUpdate.
-  rewrite <- e0.
-  rewrite findNUpdate.
+(*   intros T; eapply readSpec. *)
+(*   refine_simpl. *)
+(*   now exists s0. *)
+(*   intro vInP. *)
+(*   simpl. *)
+(*   eapply writeSpec. *)
+(*   refine_simpl; eauto. *)
+(*   eapply readSpec. *)
+(*   refine_simpl. *)
+(*   exists v. *)
+(*   rewrite findNUpdate. *)
+(*   rewrite findUpdate. *)
+(*   reflexivity. *)
+(*   rewrite findAlloc in H. *)
+(*   eapply (allocDiff' _ _ _ H). *)
+(*   admit. *)
+(*   refine_simpl. *)
+(*   eapply writeSpec. *)
+(*   refine_simpl; auto. *)
+(*   exists vInP. *)
+(*   rewrite findNUpdate; auto. *)
+(*   apply returnStep; refine_simpl. *)
+(*   unfold preConditionOf in pre; simpl in pre. *)
+(*   destruct_conjs. *)
+(*   simpl; subst. *)
+(*   rewrite e2. *)
+(*   rewrite findNUpdate; auto. *)
+(*   unfold preConditionOf in *. *)
+(*   simpl in *; subst. *)
+(*   destruct_conjs. *)
+(*   simpl. *)
+(*   subst.  *)
+(*   rewrite findUpdate. *)
+(*   rewrite <- e0. *)
+(*   rewrite findNUpdate. *)
 
   
-  rewrite findNUpdate.
-  assumption.
-  admit. 
-(* same admit as above *)
-  Unshelve.
-  refine_simpl.
-  eapply heapGrows.
-  apply H0.
-  eapply heapGrows.
-  apply e.
-  rewrite findNUpdate.
-  assumption.
-  apply (allocDiff (dyn a v)); assumption.
-Admitted.  
+(*   rewrite findNUpdate. *)
+(*   assumption. *)
+(*   admit.  *)
+(* (* same admit as above *) *)
+(*   Unshelve. *)
+(*   refine_simpl. *)
+(*   eapply heapGrows. *)
+(*   apply H0. *)
+(*   eapply heapGrows. *)
+(*   apply e. *)
+(*   rewrite findNUpdate. *)
+(*   assumption. *)
+(*   apply (allocDiff (dyn a v)); assumption. *)
+(* Admitted.   *)
   
-(** End of example **)
+(* (** End of example **) *)
 
 
 
@@ -502,3 +526,123 @@ Defined.
 (*   eapply (Refinement _ _ d'). *)
 (*   refine_simpl. *)
 (* Admitted. *)
+
+(* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
+Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
+  let SetQinN (s : Ptr -> WhileL unit) :=
+      (Read _ a Q) (fun v => New _ _ v s) in
+  let SetPinQ (s : WhileL unit) :=
+      (Read _ a P) (fun v => Write _ _ Q v s) in
+  let SetNinP (N : Ptr) (s : WhileL unit) :=
+      (Read _ a N) (fun v => Write _ _ P v s) in
+  @SWAP a P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
+Proof.
+  intros.
+  unfold SetQinN.
+  eapply readSpec.
+  refine_simpl.
+  now exists s1.
+  intros v.             
+  eapply newSpec.
+  refine_simpl.
+  exists s0; rewrite findAlloc; [ auto | now apply findIn in H0 ].
+  exists s1; rewrite findAlloc; [ auto | now apply findIn in H ].
+  rewrite <- e.
+  rewrite findAlloc; auto.
+  apply MFacts.in_find_iff; unfold not; intro HH;
+  unfold find in e; rewrite e in HH; inversion HH.
+  intro N; simpl.
+  unfold SetPinQ.
+  eapply readSpec.
+  refine_simpl.
+  exists s0.
+  rewrite findNUpdate; auto.
+  unfold not; intro HH; subst; apply n with (p' := N); auto.
+  now apply findIn in H0.
+  intro vInP.
+  simpl.
+  eapply writeSpec.
+  refine_simpl; eauto.
+  exists s2.
+  rewrite findNUpdate; auto.
+  unfold not; intro HH; subst; apply n with (p' := N); auto.
+  now apply findIn in H.  
+  eapply readSpec.
+  refine_simpl.
+  exists v.
+  rewrite findNUpdate; auto.
+  apply n.
+  eapply someIn.
+  apply H.
+  refine_simpl.
+  eapply writeSpec.
+  refine_simpl; auto.
+  exists vInP.
+  rewrite findNUpdate; auto.
+  refine_simpl.
+  apply returnStep.
+  refine_simpl; unfold preConditionOf in pre; simpl in pre.
+  destruct_conjs.
+  simpl; subst.
+  rewrite findNUpdate.
+  rewrite findUpdate.
+  rewrite <- e2.
+  rewrite findNUpdate.
+  reflexivity.
+  unfold not; intro HH; subst; apply n with (p' := N); auto.
+  now apply findIn in H0.  
+  auto.
+  destruct_conjs.
+  simpl; subst.
+  rewrite e4.
+  rewrite findUpdate.
+  rewrite <- e0.
+  rewrite findNUpdate.
+  now rewrite findUpdate.
+  unfold not; intro HH; subst; apply n with (p' := Q); auto.
+  now apply findIn in H.  
+Qed.
+
+
+(** End of example **)
+
+
+
+Definition refineIf {a} (cond : bool) (pt : PT a) :
+  let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
+  let thenBranch := [branchPre (fun s => Is_true cond),
+                     fun s pre s' => post pt s (fst pre) s' ] in
+  let elseBranch := [branchPre (fun s => Is_false cond),
+                     fun s pre s' => post pt s (fst pre) s' ] in
+  (Spec a pt) ⊑ if cond then (Spec a thenBranch) else (Spec a elseBranch).
+Proof.
+  unfold_refinements; destruct cond; simpl;
+  set (d := (fun s pres => pair pres I) : pre pt ⊂ pre ([fun s : S => (pre pt s * True)%type,
+                                        fun (s : S) (pre : pre pt s * True) (s' : a) => post pt s (fst pre) s']));
+  apply (Refinement _ _ d); intros; destruct_pt a; auto.
+Defined.
+
+Lemma refineWhilePT {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) : 
+  let pt := [inv , fun _ _ _ s' => inv s' /\ Q s'] in
+  let body : PT a := [fun s => inv s /\ Is_true (cond s), (fun _ _ _ s => inv s)] in
+  (forall s, Is_false (cond s) /\ inv s -> Q s) ->
+  pt ⊏ WhilePT inv cond body.
+  Proof.
+    intros pt body QH; simpl in *.
+    assert (d: pre pt ⊂ pre (WhilePT inv cond body)) by
+      (refine_simpl; repeat split; destruct_conjs; auto).
+    apply (Refinement _ _ d).
+    intros; repeat split; refine_simpl; destruct_conjs; now auto.
+Qed.
+
+(* TODO: update this to handle the continuation too
+Lemma refineWhile {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) 
+  (StrQ : forall s, Is_false (cond s) /\ inv s -> Q s) : 
+  let w := Spec a ([inv , fun _ _ _ s' => inv s' /\ Q s']) in
+  let body := [fun s => inv s /\ Is_true (cond s), (fun _ _ _ s => inv s)] in
+  w ⊑ While a inv cond (Spec a body).
+  Proof.
+    refine_simpl; now (apply refineWhilePT).
+  Qed.
+*)
+

@@ -116,6 +116,15 @@ Qed.
 
 Hint Resolve findUpdate findNUpdate.
 
+Lemma findIn : forall ptr s a v,
+  find s ptr = Some (dyn a v) ->
+  M.In (elt:=Dynamic) ptr s.
+Proof.
+  unfold find; intros.
+  apply MFacts.in_find_iff.
+  unfold not; intros; auto.
+  rewrite H0 in H; inversion H.
+Qed.
 
 (** Allocation **)
 
@@ -169,6 +178,7 @@ Qed.
 
 Lemma allocFresh (h : heap) : find h (alloc h) = None.
 Admitted.
+
 
 Lemma findAlloc (h : heap) (v : Dynamic) (p : Addr.t) :
   M.In p h ->
