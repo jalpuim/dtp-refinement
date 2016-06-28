@@ -211,4 +211,38 @@ Lemma heapGrows {a b: Type} (s : heap) (x : a) (y : b) (ptr : Addr.t) :
     now (intros; exists x; (rewrite findNUpdate; [ | apply (allocDiff (dyn a x))])).
 Qed.
 
-Hint Resolve allocDiff heapGrows.
+Lemma someExists {a : Type} (s : heap) (ptr : Addr.t) (x : a) :
+  find s ptr = Some (dyn a x) -> {v : a | find s ptr = Some (dyn a v)}.
+  Proof.
+    intros; now exists x.
+  Qed.
+
+Lemma someExistsT {a : Type} (s : heap) (ptr : Addr.t) (x : a) :
+  find s ptr = Some (dyn a x) -> {v : a & find s ptr = Some (dyn a v)}.
+  Proof.
+    intros; now exists x.
+  Qed.
+
+
+Lemma freshDiff1 {a : Type} (s : heap) (p q : Addr.t) (v : a) :
+  (forall p' : M.key, M.In  p' s -> p' <> p) ->
+  find s q = Some (dyn a v) ->
+  p <> q.
+  Proof.
+    intros H1 H2 Eq;
+    now (apply (H1 q); [eapply (someIn _ _ _ H2) | symmetry]).
+  Qed.
+
+Lemma freshDiff2 {a : Type} (s : heap) (p q : Addr.t) (v : a) :
+  (forall p' : M.key, M.In  p' s -> p' <> p) ->
+  find s q = Some (dyn a v) ->
+  q <> p.
+  Proof.
+    intros H1 H2 Eq;
+    now (apply (H1 q); [eapply (someIn _ _ _ H2) | ]).
+  Qed.    
+
+
+
+Hint Resolve allocDiff heapGrows someExists someExistsT someIn findAlloc freshDiff1 freshDiff2 not_eq_sym.
+Hint Rewrite findUpdate findNUpdate findAlloc : HEAP.
