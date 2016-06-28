@@ -108,13 +108,21 @@ Proof.
   apply M.find_1; now apply M.add_1.
 Qed.
 
-Lemma findNUpdate (h : heap) (p p' : Addr.t) (H : p <> p') :
-  forall v, find (update h p' v) p = find h p.
+Lemma findNUpdate1 (h : heap) (p p' : Addr.t) (D : p <> p') (x : option Dynamic) (v : Dynamic) :
+  find h p = x ->
+  find (update h p' v) p = x.
 Proof.
-  intro v; unfold find, update; apply add_neq_o; auto.
+  intros H; unfold find, update; rewrite add_neq_o; now eauto.
 Qed.
 
-Hint Resolve findUpdate findNUpdate.
+Lemma findNUpdate2 (h : heap) (p p' : Addr.t) (D : p <> p') (x : option Dynamic) (v : Dynamic) :
+  find h p = x ->
+  x = find (update h p' v) p.
+Proof.
+  intros H; unfold find, update; rewrite add_neq_o; now eauto.
+Qed.
+
+Hint Resolve findUpdate findNUpdate1 findNUpdate2.
 
 Lemma findIn : forall ptr s a v,
   find s ptr = Some (dyn a v) ->
@@ -180,7 +188,7 @@ Lemma allocFresh (h : heap) : find h (alloc h) = None.
 Admitted.
 
 
-Lemma findAlloc (h : heap) (v : Dynamic) (p : Addr.t) :
+Lemma findAlloc1 (h : heap) (v : Dynamic) (p : Addr.t) :
   M.In p h ->
   find (update h (alloc h) v) p = find h p.
 Proof.
@@ -188,14 +196,22 @@ Proof.
   unfold not; intros; subst; now apply allocNotIn in HIn.
 Qed.
 
-Hint Resolve allocFresh findAlloc.
+Lemma findAlloc2 (h : heap) (v : Dynamic) (p : Addr.t) :
+  M.In p h ->
+  find h p = find (update h (alloc h) v) p.
+Proof.
+  intro HIn; unfold find; symmetry.
+  now apply findAlloc1.
+Qed.
 
-Lemma allocDiff (v : Dynamic) (h : heap) (ptr : Addr.t) :
+Hint Resolve allocFresh findAlloc1 findAlloc2.
+
+Lemma allocDiff1 (v : Dynamic) (h : heap) (ptr : Addr.t) :
   find h ptr = Some v -> 
   ptr <> alloc h.
 Admitted.
 
-Lemma allocDiff' (v : Dynamic) (h : heap) (ptr : Addr.t) :
+Lemma allocDiff2 (v : Dynamic) (h : heap) (ptr : Addr.t) :
   find h ptr = Some v -> 
   alloc h <> ptr.
 Admitted.
@@ -208,8 +224,8 @@ Lemma heapGrows {a b: Type} (s : heap) (x : a) (y : b) (ptr : Addr.t) :
   find s ptr = Some (dyn a x) ->
   {z : a | find (update s (alloc s) (dyn b y)) ptr = Some (dyn a z)}.
   Proof.
-    now (intros; exists x; (rewrite findNUpdate; [ | apply (allocDiff (dyn a x))])).
-Qed.
+    intros; exists x; eapply findNUpdate1; try eapply allocDiff1; eassumption.
+  Qed.
 
 Lemma someExists {a : Type} (s : heap) (ptr : Addr.t) (x : a) :
   find s ptr = Some (dyn a x) -> {v : a | find s ptr = Some (dyn a v)}.
@@ -244,5 +260,4 @@ Lemma freshDiff2 {a : Type} (s : heap) (p q : Addr.t) (v : a) :
 
 
 
-Hint Resolve allocDiff heapGrows someExists someExistsT someIn findAlloc freshDiff1 freshDiff2 not_eq_sym.
-Hint Rewrite findUpdate findNUpdate findAlloc : HEAP.
+Hint Resolve allocDiff1 allocDiff2 heapGrows someExists someExistsT someIn findAlloc1 findAlloc2 freshDiff1 freshDiff2 not_eq_sym.

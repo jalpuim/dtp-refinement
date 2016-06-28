@@ -300,7 +300,7 @@ Lemma refineWhilePT {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) :
     intros; repeat split; refine_simpl; destruct_conjs; now auto.
 Qed.
 
-Ltac heap_simpl := try (rewrite findAlloc in * || rewrite findUpdate in * || rewrite findNUpdate in *).
+Ltac heap_simpl := try (rewrite findAlloc1, findAlloc2 in * || rewrite findUpdate in * || rewrite findNUpdate1 in * || rewrite findNUpdate2 in *).
 Ltac goal_simpl :=  refine_simpl; heap_simpl; eauto.
 Ltac READ ptr v := eapply (readSpec ptr); [ | intros v]; goal_simpl.
 Ltac NEW v ptr := eapply (newSpec v); [ | intros ptr]; goal_simpl.
@@ -316,34 +316,26 @@ Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
       (Read _ a N) (fun v => Write _ _ P v s) in
   @SWAP a P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
 Proof.
-  intros.
-  unfold SetQinN.
   READ Q x.
   NEW x T.
   READ P y.
   WRITE Q y.
   READ T z.
   WRITE P z.
-  eapply someExistsT.
-  rewrite findNUpdate.
-  exact H0.
-  eauto.
   apply returnStep.
   unfold_refinements; refine_simpl.
-  rewrite findNUpdate.
+  eapply findNUpdate2; [ eauto | ].
   rewrite findUpdate.
-  rewrite findNUpdate in e2.
-  rewrite findNUpdate in e0.
-  rewrite findUpdate in e0.
-  assumption.
-  eauto. 
+  rewrite <- e2.
+  apply findNUpdate1.
   eauto.
+  reflexivity.
+  rewrite findUpdate.
+  rewrite <- e0.
+  eapply findNUpdate2.
   eauto.
-  heap_simpl; eauto.
-  rewrite findNUpdate in e0.
-  rewrite findUpdate in e0.
-  now rewrite <- e0.
-  eauto.
+  rewrite findUpdate.
+  now rewrite e4.
 Qed.
 
 
