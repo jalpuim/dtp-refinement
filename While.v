@@ -338,12 +338,134 @@ Proof.
   now rewrite e4.
 Qed.
 
+(*******************************************************************************
+                ****  Union-Find refinement example ****
+*******************************************************************************)
 
+Definition Rank := nat.
+
+(* We know that Ptr will point to Content 
+   TODO maybe find a better translation for polymorphic references "ref a"? *)
+Definition Elem := Ptr.
+
+Inductive Content : Type :=
+  | Root : Rank -> Content
+  | Link : Elem -> Content.
+
+(** Make **)
+
+Definition make : unit -> WhileL Elem :=
+  fun _ => New _ _ 0 (fun ptr => Return _ ptr).
+
+Definition makeSpec : WhileL Elem.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => True) _).
+  intros s H t s'.
+  refine ({p : Ptr | find s' p = Some (dyn Rank 0)}).
+Defined.
+
+Lemma makeResult : makeSpec ⊑ make tt.
+Proof.
+  NEW 0 p.
+  apply returnStep.
+  unfold_refinements; refine_simpl; exists p; auto.
+Qed.
+
+(** Find/Link **)
+
+(* TODO the following 2 definitions should be used temporarly *)
+Definition addr_eqb (x : Addr.addr) (y : Addr.addr) :=
+  match x, y with
+    | Addr.MkAddr v1, Addr.MkAddr v2 => Nat.eqb v1 v2
+  end.
+
+Definition eqb_addr_spec : forall x y, reflect (x = y) (addr_eqb x y).
+  intros x y; destruct x; destruct y; simpl; apply iff_reflect; split; intros;
+  [ inversion H; now apply PeanoNat.Nat.eqb_eq
+  | apply f_equal; now apply PeanoNat.Nat.eqb_eq ].
+Defined.
+
+Definition linkByRank (x : Elem) (y : Elem) (rx : Rank) (ry : Rank) :
+  WhileL Elem :=
+  match Nat.compare rx ry with
+    | Lt => Write _ _ x (Link y) (Return _ y)
+    | Gt => Write _ _ y (Link x) (Return _ x)
+    | Eq => Write _ _ y (Link x) (Write _ _ y (Root (Nat.succ rx)) (Return _ x))
+  end.
+
+Definition link (x : Elem) (y : Elem) : WhileL Elem :=
+  if addr_eqb x y
+  then Return _ x
+  else let readPtrs k :=
+           Read _ _ x (fun xVal => Read _ _ y (fun yVal => k xVal yVal)) in
+       let cont (vx vy : Content) :=
+           match vx, vy with
+             | Root rx, Root ry => linkByRank x y rx ry
+             | _, _ => Return _ x (* hopefully during the refinement process
+                                     we can show this case will never occur *)
+           end in
+       readPtrs cont.
+
+(* I don't like this spec, it's too similar to the code *)
+Definition linkSpec (x : Elem) (y : Elem) : WhileL Elem.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => prod ({r : Rank | find s x =
+                                                  Some (dyn Content (Root r))})
+                                     ({r : Rank | find s y =
+                                                  Some (dyn Content (Root r))}))
+                    _).
+  intros s [[rx HxFind] [ry HyFind]] t s'.
+  destruct (eqb_addr_spec x y).
+  apply (t = x).
+  destruct (Nat.compare rx ry).
+  apply (prod (find s' x = Some (dyn Content (Link y))) (t = y)).
+  apply (prod (find s' y = Some (dyn Content (Link x))) (t = x)).
+  apply (prod (find s' y = Some (dyn Content (Link x)))
+              (prod (find s' x = Some (dyn Content (Root (Nat.succ rx))))
+                    (t = y))).
+Defined.
+
+(* The following does not pass Coq's termination checker *)
+
+Fixpoint ufind (x : Elem) : WhileL Elem.
+(* The following does not pass Coq's termination checker
+refine (
+  Read Elem Content x
+       (fun v => match v with
+                  | Root _ => Return _ x
+                  | Link y => bind (ufind y)
+                                   (fun z => Write _ _ x (Link z) (Return _ z))
+                end)). *)
+Admitted.
+
+(* TODO This accounts for paths but not for updated references *)
+Inductive PathToRoot (s : heap) (el : Elem) : list Elem -> Type :=
+  | This : forall v, find s el = Some (dyn Content (Root v)) ->
+                PathToRoot s el (el :: nil)
+  | Path : forall p r l, find s p = Some (dyn Content (Link r)) ->
+                    PathToRoot s el l -> 
+                    PathToRoot s el (r :: l).
+
+Definition findSpec (x : Elem) : WhileL Elem.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => { v : Content | find s x = Some (dyn Content v)}) _).
+  intros s [v HFindX] t s'.
+  refine ({ l : list Elem & prod (PathToRoot s x l)
+                                 (head (rev l) = Some t) } ).
+Defined.
+
+(** Union and Equiv **)
+
+Definition union (x y : Elem) : WhileL Elem :=
+  bind (ufind x) (fun xVal => bind (ufind y) (fun yVal => link xVal yVal)).
+
+Definition equiv (x y : Elem) : WhileL bool :=
+  bind (ufind x) (fun xVal => bind (ufind y)
+                                  (fun yVal => Return _ (addr_eqb xVal yVal))).
+  
 (** End of example **)
 
-
-
-Definition refineIf {a} (cond : bool) (pt : PT a) :
+Definition refineIf' {a} (cond : bool) (pt : PT a) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
   let thenBranch := [branchPre (fun s => Is_true cond),
                      fun s pre s' => post pt s (fst pre) s' ] in
@@ -357,7 +479,7 @@ Proof.
   apply (Refinement _ _ d); intros; destruct_pt a; auto.
 Defined.
 
-Lemma refineWhilePT {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) : 
+Lemma refineWhilePT' {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) : 
   let pt := [inv , fun _ _ _ s' => inv s' /\ Q s'] in
   let body : PT a := [fun s => inv s /\ Is_true (cond s), (fun _ _ _ s => inv s)] in
   (forall s, Is_false (cond s) /\ inv s -> Q s) ->
