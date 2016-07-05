@@ -342,6 +342,113 @@ Qed.
                 ****  Union-Find refinement example ****
 *******************************************************************************)
 
+(* Attempt following "A Persistent Union-Find Data Structure" *)
+
+Set Implicit Arguments.
+Require Export Wf_nat.
+Require Export ZArith.
+Open Scope Z_scope.
+
+(* function that gives the elements for the original array *)
+Parameter parray : Z -> Z.
+
+Inductive data : Type :=
+  | Arr : data
+  | Diff : Z -> Z -> Ptr -> data.
+
+(* Record mem : Set := { ref : heap ; arr : Z -> Z }. *)
+Inductive mem : Type :=
+  | Mem : forall (ref : heap) (arr : Z -> Z), mem.               
+
+Definition ref (m : mem) :=
+  match m with
+    | Mem r _ => r
+  end.
+
+Definition arr (m : mem) :=
+  match m with
+    | Mem _ a => a
+  end. 
+
+(* Updates an array at index i with v. I don't know why they used integers 
+instead of naturals (maybe to avoid clashes?) *)
+Definition upd (f:Z->Z) (i:Z) (v:Z) := 
+  fun j => if Z_eq_dec j i then v else f j.
+
+(* 
+   pa_valid states that, given a pointer "p", we either have: 
+   1. p points to the original array "Arr"
+   2. p points to different "Diff", which is a change of another valid array,
+      in one position only.
+*)
+Inductive pa_valid (m : mem) : Ptr -> Prop :=
+  | array_pa_valid : forall p, find (ref m) p = Some (dyn data Arr) -> pa_valid m p
+  | diff_pa_valid : forall p i v p', find (ref m) p = Some (dyn data (Diff i v p')) ->
+                                pa_valid m p' -> pa_valid m p.
+
+(* 
+   pa_model states that, given a pointer "p", we either have: 
+   1. p points to the original array "Arr", with elements given by (Z -> Z)
+   2. p points to different "Diff", which is a change of another valid array,
+      in one position only, updating the other array in that position (using upd)
+*)
+Inductive pa_model (m: mem) : Ptr -> (Z -> Z) -> Prop :=
+  | pa_model_array :
+     forall p, find (ref m) p = Some (dyn data Arr) -> pa_model m p (arr m)
+  | pa_model_diff :
+     forall p i v p', find (ref m) p = Some (dyn data (Diff i v p')) ->
+     forall f, pa_model m p' f -> pa_model m p (upd f i v).
+
+Lemma pa_model_pa_valid :
+  forall m p f, pa_model m p f -> pa_valid m p.
+Proof.
+  induction 1.
+  apply array_pa_valid; auto.
+  apply diff_pa_valid with (i:=i) (v:=v) (p':=p'); auto.
+Qed.
+
+(* The adapted spec from Ch.4 *)
+(*
+Definition get : 
+  forall m, forall p, pa_valid m p -> 
+  forall i, { v:Z | forall f, pa_model m p f -> v = f i }.
+*)
+Definition getSpec : WhileL Z.
+  intros.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => { p : Ptr & pa_valid (Mem s parray) p }) _).
+  intros s [p H] v.
+  refine (fun s' => forall i f, pa_model (Mem s f) p f -> v = f i).
+Defined.
+
+(* The orginial get implementation, presented in Page 3 *)
+Fixpoint get (ptr : Ptr) : Z -> WhileL Z := 
+  fun i => Read _ data ptr
+               (fun ptrVal => match ptrVal with
+                               | Arr => Return _ (parray i)
+                               | Diff j v ptr' => if Zeq_bool i j
+                                                 then Return _ v
+                                                 else get ptr' i
+                             end).
+
+(*
+Parameter N : nat.
+
+Inductive repr (f : nat -> nat) : nat -> nat -> Prop :=
+  | repr_zero : forall i, f i = i -> repr f i i
+  | repr_succ : forall i j r, f i = j -> 0 <= j < N -> ~ j = i -> repr f j r ->
+                         repr f i r.
+
+Definition reprf (f : nat -> nat) :=
+  (forall i, 0 <= i < N -> 0 <= f i < N) /\
+  (forall i, 0 <= i < N -> exists j, repr f i j).
+*)
+
+
+
+
+(* Attempt following Chargueraud's paper *)
+
 Definition Rank := nat.
 
 (* We know that Ptr will point to Content 
