@@ -18,7 +18,7 @@ Inductive WhileL (a : Type) : Type :=
   | New    : forall v, v -> (Ptr -> WhileL a) -> WhileL a
   | Read   : forall v, Ptr -> (v -> WhileL a) -> WhileL a
   | Write  : forall v, Ptr -> v -> WhileL a  -> WhileL a
-  | While  : (S -> Prop) -> (S -> bool) -> WhileL a -> WhileL a -> WhileL a
+  | While  : (S -> Prop) -> (S -> bool) -> WhileL unit -> WhileL a -> WhileL a
   | Spec   : PT a -> WhileL a
   | Return : a -> WhileL a.
 
@@ -68,7 +68,7 @@ Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : While
   | New _ _ v c  => New _ _ v (fun p => bind (c p) k)
   | Read _ _ p c => Read _ _ p (fun v => bind (c v) k)
   | Write _ _ p v c => Write _ _ p v (bind c k)
-  | While _ Inv cond body c => While _ Inv cond (bind body k) (bind c k)
+  | While _ Inv cond body c => While _ Inv cond (body) (bind c k)
   | Spec _ pt => Spec _ (BindPT pt (fun x => semantics (k x)))
   | Return _ x => k x
   end.
@@ -253,6 +253,16 @@ Proof.
   Unshelve. refine_simpl.
 Qed.
 
+Lemma changeSpec {a : Type} (pt2 pt1 : PT a) (w : WhileL a)
+  (d : pre pt1 ⊂ pre pt2)
+  (h : forall (s : S) (x : pre pt1 s) v, post pt2 s (d s x) v ⊂ post pt1 s x v)
+  (H : Spec _ pt2 ⊑ w) :
+  Spec _ pt1 ⊑ w.
+  Proof.
+    eapply refineTrans; [ | apply H].
+    exact (Refinement _ _ d h).
+  Qed.
+
 (** Just a brief example showing how the language currently looks like 
     Contains some testing definitions to be moved elsewhere once proven.
 **)
@@ -305,8 +315,10 @@ Ltac goal_simpl :=  refine_simpl; heap_simpl; eauto.
 Ltac READ ptr v := eapply (readSpec ptr); [ | intros v]; goal_simpl.
 Ltac NEW v ptr := eapply (newSpec v); [ | intros ptr]; goal_simpl.
 Ltac WRITE ptr v := eapply (writeSpec ptr v); goal_simpl.
-
+Ltac ASSERT P := unshelve eapply (changeSpec P).
+Ltac RETURN := eapply returnStep; unfold_refinements; goal_simpl.
 (* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
+
 Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
   let SetQinN (s : Ptr -> WhileL unit) :=
       (Read _ a Q) (fun v => New _ _ v s) in
@@ -322,26 +334,94 @@ Proof.
   WRITE Q y.
   READ T z.
   WRITE P z.
-  apply returnStep.
-  unfold_refinements; refine_simpl.
+  RETURN.
   eapply findNUpdate2; [ eauto | ].
   rewrite findUpdate.
   rewrite <- e2.
   apply findNUpdate1.
   eauto.
   reflexivity.
-  rewrite findUpdate.
   rewrite <- e0.
-  eapply findNUpdate2.
-  eauto.
-  rewrite findUpdate.
-  now rewrite e4.
+  eapply findNUpdate2; [ eauto | ].
+  now rewrite findUpdate.
 Qed.
 
+Definition swapResult' (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
+  let SetQinN (s : Ptr -> WhileL unit) :=
+      (Read _ a Q) (fun v => New _ _ v s) in
+  let SetPinQ (s : WhileL unit) :=
+      (Read _ a P) (fun v => Write _ _ Q v s) in
+  let SetNinP (N : Ptr) (s : WhileL unit) :=
+      (Read _ a N) (fun v => Write _ _ P v s) in
+  @SWAP a P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
+Proof.
+  READ Q x.
+  NEW x T.
+  READ P y.
+  WRITE Q y.
+  ASSERT ([fun s => {v : a & prod (find s T = Some (dyn a v)) 
+                                       ({v' : a | find s P = Some (dyn a v')})}
+                     , fun s pres (v : unit) s' => find s' P = find s T /\ find s Q = find s' Q ]); [ refine_simpl; exists x; split; eauto | | ].
+  { 
+    refine_simpl.
+    rewrite <- H0; rewrite findUpdate; rewrite <- e0.
+    now apply findNUpdate2; eauto.
+    rewrite H.
+    apply findNUpdate2; eauto.
+    now rewrite findUpdate.
+  }
+  READ T z.
+  WRITE P z.
+  RETURN.
+Qed.
 
+Definition simplSwapDumb (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
+  let CODE :=
+      (Read _ a Q) (fun q => 
+       Read _ a P (fun p =>
+       Write _ _ Q p (
+       Write _ _ P q (Return _ tt))))
+  in @SWAP a P Q ⊑ CODE.
+  intros CODE; unfold CODE.
+  unfold wrefines.
+  refine_simpl.
+  unshelve eapply Refinement.
+  refine_simpl.
+  now exists s1.
+  refine (existT _ (existT _ s0 _) _).
+  split.
+  now exists_now.
+  split.
+  exists s0.
+  eapply findNUpdate1.
+  eauto.
+  trivial.
+  trivial.
+  refine_simpl.
+  apply findNUpdate2; eauto.
+  now rewrite findUpdate.
+  now rewrite findUpdate.
+  Unshelve.
+  trivial.
+  Qed.
+
+Definition simplSwap (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
+  let CODE :=
+      (Read _ a Q) (fun q => 
+       Read _ a P (fun p =>
+       Write _ _ Q p (
+       Write _ _ P q (Return _ tt))))
+  in @SWAP a P Q ⊑ CODE.
+  intros CODE; unfold CODE.
+  READ Q q.
+  READ P p.
+  WRITE Q p.
+  WRITE P q.
+  RETURN.
+  apply findNUpdate2; [eauto | ].
+  now rewrite findUpdate.
+  Qed.
 (** End of example **)
-
-
 
 Definition refineIf {a} (cond : bool) (pt : PT a) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in

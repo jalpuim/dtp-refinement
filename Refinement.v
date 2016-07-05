@@ -143,15 +143,15 @@ Definition WhilePT {a : Type} (inv : S -> Prop) (cond : S -> bool) (body : PT a)
   let whilePost := (fun _ _ _ s' => inv s' /\ Is_false (cond s')) in
   [ whilePre , whilePost ].
 
-
-Definition SeqPT {a : Type} (pt1 pt2 : PT a) : PT a :=
+Definition SeqPT {a b : Type} (pt1 : PT a) (pt2 : PT b) : PT b :=
   let seqPre := fun s => { pres : pre pt1 s & forall t v, post pt1 s pres v t -> pre pt2 t} in
-  let seqPost : forall s : S, seqPre s -> a -> Pow S := fun (s : S) (pres : seqPre s) (v : a) (s' : S) => 
+  let seqPost : forall s : S, seqPre s -> b -> Pow S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) => 
   {t : S &
-  {v : a &
-  {q : post pt1 s (projT1 pres) v t &
-   post pt2 t (projT2 pres t v q) v s'}}} in
+  {v' : a &
+  {q : post pt1 s (projT1 pres) v' t &
+   post pt2 t (projT2 pres t v' q) v s'}}} in
   [seqPre , seqPost].
+
 
 Notation "pt1 ;; pt2" := (SeqPT pt1 pt2) (at level 52, right associativity).
 
