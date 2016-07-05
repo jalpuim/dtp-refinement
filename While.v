@@ -422,8 +422,241 @@ Definition simplSwap (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
   now rewrite findUpdate.
   Qed.
 (** End of example **)
+(*******************************************************************************
+                ****  Union-Find refinement example ****
+*******************************************************************************)
 
-Definition refineIf {a} (cond : bool) (pt : PT a) :
+(* Attempt following "A Persistent Union-Find Data Structure" *)
+
+Set Implicit Arguments.
+Require Export Wf_nat.
+Require Export ZArith.
+Open Scope Z_scope.
+
+(* function that gives the elements for the original array *)
+Parameter parray : Z -> Z.
+
+Inductive data : Type :=
+  | Arr : data
+  | Diff : Z -> Z -> Ptr -> data.
+
+(* Record mem : Set := { ref : heap ; arr : Z -> Z }. *)
+Inductive mem : Type :=
+  | Mem : forall (ref : heap) (arr : Z -> Z), mem.               
+
+Definition ref (m : mem) :=
+  match m with
+    | Mem r _ => r
+  end.
+
+Definition arr (m : mem) :=
+  match m with
+    | Mem _ a => a
+  end. 
+
+(* Updates an array at index i with v. I don't know why they used integers 
+instead of naturals (maybe to avoid clashes?) *)
+Definition upd (f:Z->Z) (i:Z) (v:Z) := 
+  fun j => if Z_eq_dec j i then v else f j.
+
+(* 
+   pa_valid states that, given a pointer "p", we either have: 
+   1. p points to the original array "Arr"
+   2. p points to different "Diff", which is a change of another valid array,
+      in one position only.
+*)
+Inductive pa_valid (m : mem) : Ptr -> Prop :=
+  | array_pa_valid : forall p, find (ref m) p = Some (dyn data Arr) -> pa_valid m p
+  | diff_pa_valid : forall p i v p', find (ref m) p = Some (dyn data (Diff i v p')) ->
+                                pa_valid m p' -> pa_valid m p.
+
+(* 
+   pa_model states that, given a pointer "p", we either have: 
+   1. p points to the original array "Arr", with elements given by (Z -> Z)
+   2. p points to different "Diff", which is a change of another valid array,
+      in one position only, updating the other array in that position (using upd)
+*)
+Inductive pa_model (m: mem) : Ptr -> (Z -> Z) -> Prop :=
+  | pa_model_array :
+     forall p, find (ref m) p = Some (dyn data Arr) -> pa_model m p (arr m)
+  | pa_model_diff :
+     forall p i v p', find (ref m) p = Some (dyn data (Diff i v p')) ->
+     forall f, pa_model m p' f -> pa_model m p (upd f i v).
+
+Lemma pa_model_pa_valid :
+  forall m p f, pa_model m p f -> pa_valid m p.
+Proof.
+  induction 1.
+  apply array_pa_valid; auto.
+  apply diff_pa_valid with (i:=i) (v:=v) (p':=p'); auto.
+Qed.
+
+(* The adapted spec from Ch.4 *)
+(*
+Definition get : 
+  forall m, forall p, pa_valid m p -> 
+  forall i, { v:Z | forall f, pa_model m p f -> v = f i }.
+*)
+Definition getSpec : WhileL Z.
+  intros.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => { p : Ptr & pa_valid (Mem s parray) p }) _).
+  intros s [p H] v.
+  refine (fun s' => forall i f, pa_model (Mem s f) p f -> v = f i).
+Defined.
+
+(* The orginial get implementation, presented in Page 3 *)
+Fixpoint get (ptr : Ptr) : Z -> WhileL Z := 
+  fun i => Read _ data ptr
+               (fun ptrVal => match ptrVal with
+                               | Arr => Return _ (parray i)
+                               | Diff j v ptr' => if Zeq_bool i j
+                                                 then Return _ v
+                                                 else get ptr' i
+                             end).
+
+(*
+Parameter N : nat.
+
+Inductive repr (f : nat -> nat) : nat -> nat -> Prop :=
+  | repr_zero : forall i, f i = i -> repr f i i
+  | repr_succ : forall i j r, f i = j -> 0 <= j < N -> ~ j = i -> repr f j r ->
+                         repr f i r.
+
+Definition reprf (f : nat -> nat) :=
+  (forall i, 0 <= i < N -> 0 <= f i < N) /\
+  (forall i, 0 <= i < N -> exists j, repr f i j).
+*)
+
+
+
+
+(* Attempt following Chargueraud's paper *)
+
+Definition Rank := nat.
+
+(* We know that Ptr will point to Content 
+   TODO maybe find a better translation for polymorphic references "ref a"? *)
+Definition Elem := Ptr.
+
+Inductive Content : Type :=
+  | Root : Rank -> Content
+  | Link : Elem -> Content.
+
+(** Make **)
+
+Definition make : unit -> WhileL Elem :=
+  fun _ => New _ _ 0 (fun ptr => Return _ ptr).
+
+Definition makeSpec : WhileL Elem.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => True) _).
+  intros s H t s'.
+  refine ({p : Ptr | find s' p = Some (dyn Rank 0)}).
+Defined.
+
+Lemma makeResult : makeSpec ⊑ make tt.
+Proof.
+  NEW 0 p.
+  apply returnStep.
+  unfold_refinements; refine_simpl; exists p; auto.
+Qed.
+
+(** Find/Link **)
+
+(* TODO the following 2 definitions should be used temporarly *)
+Definition addr_eqb (x : Addr.addr) (y : Addr.addr) :=
+  match x, y with
+    | Addr.MkAddr v1, Addr.MkAddr v2 => Nat.eqb v1 v2
+  end.
+
+Definition eqb_addr_spec : forall x y, reflect (x = y) (addr_eqb x y).
+  intros x y; destruct x; destruct y; simpl; apply iff_reflect; split; intros;
+  [ inversion H; now apply PeanoNat.Nat.eqb_eq
+  | apply f_equal; now apply PeanoNat.Nat.eqb_eq ].
+Defined.
+
+Definition linkByRank (x : Elem) (y : Elem) (rx : Rank) (ry : Rank) :
+  WhileL Elem :=
+  match Nat.compare rx ry with
+    | Lt => Write _ _ x (Link y) (Return _ y)
+    | Gt => Write _ _ y (Link x) (Return _ x)
+    | Eq => Write _ _ y (Link x) (Write _ _ y (Root (Nat.succ rx)) (Return _ x))
+  end.
+
+Definition link (x : Elem) (y : Elem) : WhileL Elem :=
+  if addr_eqb x y
+  then Return _ x
+  else let readPtrs k :=
+           Read _ _ x (fun xVal => Read _ _ y (fun yVal => k xVal yVal)) in
+       let cont (vx vy : Content) :=
+           match vx, vy with
+             | Root rx, Root ry => linkByRank x y rx ry
+             | _, _ => Return _ x (* hopefully during the refinement process
+                                     we can show this case will never occur *)
+           end in
+       readPtrs cont.
+
+(* I don't like this spec, it's too similar to the code *)
+Definition linkSpec (x : Elem) (y : Elem) : WhileL Elem.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => prod ({r : Rank | find s x =
+                                                  Some (dyn Content (Root r))})
+                                     ({r : Rank | find s y =
+                                                  Some (dyn Content (Root r))}))
+                    _).
+  intros s [[rx HxFind] [ry HyFind]] t s'.
+  destruct (eqb_addr_spec x y).
+  apply (t = x).
+  destruct (Nat.compare rx ry).
+  apply (prod (find s' x = Some (dyn Content (Link y))) (t = y)).
+  apply (prod (find s' y = Some (dyn Content (Link x))) (t = x)).
+  apply (prod (find s' y = Some (dyn Content (Link x)))
+              (prod (find s' x = Some (dyn Content (Root (Nat.succ rx))))
+                    (t = y))).
+Defined.
+
+(* The following does not pass Coq's termination checker *)
+
+Fixpoint ufind (x : Elem) : WhileL Elem.
+(* The following does not pass Coq's termination checker
+refine (
+  Read Elem Content x
+       (fun v => match v with
+                  | Root _ => Return _ x
+                  | Link y => bind (ufind y)
+                                   (fun z => Write _ _ x (Link z) (Return _ z))
+                end)). *)
+Admitted.
+
+(* TODO This accounts for paths but not for updated references *)
+Inductive PathToRoot (s : heap) (el : Elem) : list Elem -> Type :=
+  | This : forall v, find s el = Some (dyn Content (Root v)) ->
+                PathToRoot s el (el :: nil)
+  | Path : forall p r l, find s p = Some (dyn Content (Link r)) ->
+                    PathToRoot s el l -> 
+                    PathToRoot s el (r :: l).
+
+Definition findSpec (x : Elem) : WhileL Elem.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => { v : Content | find s x = Some (dyn Content v)}) _).
+  intros s [v HFindX] t s'.
+  refine ({ l : list Elem & prod (PathToRoot s x l)
+                                 (head (rev l) = Some t) } ).
+Defined.
+
+(** Union and Equiv **)
+
+Definition union (x y : Elem) : WhileL Elem :=
+  bind (ufind x) (fun xVal => bind (ufind y) (fun yVal => link xVal yVal)).
+
+Definition equiv (x y : Elem) : WhileL bool :=
+  bind (ufind x) (fun xVal => bind (ufind y)
+                                  (fun yVal => Return _ (addr_eqb xVal yVal))).
+  
+(** End of example **)
+
+Definition refineIf' {a} (cond : bool) (pt : PT a) :
   let branchPre (P : S -> Prop) := fun s => prod (pre pt s) (P s) in
   let thenBranch := [branchPre (fun s => Is_true cond),
                      fun s pre s' => post pt s (fst pre) s' ] in
@@ -437,7 +670,7 @@ Proof.
   apply (Refinement _ _ d); intros; destruct_pt a; auto.
 Defined.
 
-Lemma refineWhilePT {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) : 
+Lemma refineWhilePT' {a} (inv : S -> Prop) (cond : S -> bool) (Q : S -> Prop) : 
   let pt := [inv , fun _ _ _ s' => inv s' /\ Q s'] in
   let body : PT a := [fun s => inv s /\ Is_true (cond s), (fun _ _ _ s => inv s)] in
   (forall s, Is_false (cond s) /\ inv s -> Q s) ->
