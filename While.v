@@ -430,19 +430,17 @@ Definition simplSwap (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
 
 Set Implicit Arguments.
 Require Export Wf_nat.
-Require Export ZArith.
-Open Scope Z_scope.
 
 (* function that gives the elements for the original array *)
-Parameter parray : Z -> Z.
+Parameter parray : nat -> nat.
 
 Inductive data : Type :=
   | Arr : data
-  | Diff : Z -> Z -> Ptr -> data.
+  | Diff : nat -> nat -> Ptr -> data.
 
 (* Record mem : Set := { ref : heap ; arr : Z -> Z }. *)
 Inductive mem : Type :=
-  | Mem : forall (ref : heap) (arr : Z -> Z), mem.               
+  | Mem : forall (ref : heap) (arr : nat -> nat), mem.               
 
 Definition ref (m : mem) :=
   match m with
@@ -456,8 +454,8 @@ Definition arr (m : mem) :=
 
 (* Updates an array at index i with v. I don't know why they used integers 
 instead of naturals (maybe to avoid clashes?) *)
-Definition upd (f:Z->Z) (i:Z) (v:Z) := 
-  fun j => if Z_eq_dec j i then v else f j.
+Definition upd (f : nat -> nat) (i : nat) (v : nat) := 
+  fun j => if beq_nat j i then v else f j.
 
 (* 
    pa_valid states that, given a pointer "p", we either have: 
@@ -465,10 +463,11 @@ Definition upd (f:Z->Z) (i:Z) (v:Z) :=
    2. p points to different "Diff", which is a change of another valid array,
       in one position only.
 *)
-Inductive pa_valid (m : mem) : Ptr -> Prop :=
+Inductive pa_valid (m : mem) : Ptr -> Type :=
   | array_pa_valid : forall p, find (ref m) p = Some (dyn data Arr) -> pa_valid m p
   | diff_pa_valid : forall p i v p', find (ref m) p = Some (dyn data (Diff i v p')) ->
-                                pa_valid m p' -> pa_valid m p.
+                                pa_valid m p' ->
+                                pa_valid m p.
 
 (* 
    pa_model states that, given a pointer "p", we either have: 
@@ -476,12 +475,13 @@ Inductive pa_valid (m : mem) : Ptr -> Prop :=
    2. p points to different "Diff", which is a change of another valid array,
       in one position only, updating the other array in that position (using upd)
 *)
-Inductive pa_model (m: mem) : Ptr -> (Z -> Z) -> Prop :=
+Inductive pa_model (m: mem) : Ptr -> (nat -> nat) -> Type :=
   | pa_model_array :
      forall p, find (ref m) p = Some (dyn data Arr) -> pa_model m p (arr m)
   | pa_model_diff :
      forall p i v p', find (ref m) p = Some (dyn data (Diff i v p')) ->
-     forall f, pa_model m p' f -> pa_model m p (upd f i v).
+                 forall f, pa_model m p' f ->
+                      pa_model m p (upd f i v).
 
 Lemma pa_model_pa_valid :
   forall m p f, pa_model m p f -> pa_valid m p.
@@ -497,23 +497,98 @@ Definition get :
   forall m, forall p, pa_valid m p -> 
   forall i, { v:Z | forall f, pa_model m p f -> v = f i }.
 *)
-Definition getSpec : WhileL Z.
-  intros.
+Definition getSpec : Ptr -> nat -> WhileL nat.
+  intros ptr i.
   refine (Spec _ _).
-  refine (Predicate _ (fun s => { p : Ptr & pa_valid (Mem s parray) p }) _).
-  intros s [p H] v.
-  refine (fun s' => forall i f, pa_model (Mem s f) p f -> v = f i).
+  refine (Predicate _ (fun s => { f : nat -> nat & pa_model (Mem s parray) ptr f}) _).
+  intros s [f H] v.
+  refine (fun s' => prod (s = s') (v = f i)).
 Defined.
 
 (* The orginial get implementation, presented in Page 3 *)
-Fixpoint get (ptr : Ptr) : Z -> WhileL Z := 
-  fun i => Read _ data ptr
-               (fun ptrVal => match ptrVal with
-                               | Arr => Return _ (parray i)
-                               | Diff j v ptr' => if Zeq_bool i j
-                                                 then Return _ v
-                                                 else get ptr' i
-                             end).
+Fixpoint get (n : nat) (ptr : Ptr) (i : nat) : WhileL nat := 
+  Read _ data ptr
+       (fun ptrVal => match n, ptrVal with
+                       | 0, Arr => Return _ (parray i)
+                       | Coq.Init.Datatypes.S n', Diff j v ptr' =>
+                         if beq_nat i j
+                         then Return _ v
+                         else get n' ptr' i
+                       | _,_ => Return _ (parray i) (* absurd *)
+                     end).
+
+Definition get' (ptr : Ptr) (i : nat) : WhileL nat := 
+  Read _ data ptr
+       (fun ptrVal => match ptrVal with
+                       | Arr => Return _ (parray i)
+                       | Diff j v ptr' =>
+                         if beq_nat i j
+                         then Return _ v
+                         else getSpec ptr' i
+                     end).
+
+Lemma getRefinement : forall n ptr i, getSpec ptr i ⊑ get n ptr i.
+Proof.
+  intros.
+  unfold getSpec, get.
+  (* eapply readSpec. *)
+Admitted.
+
+Lemma getRefinement' : forall ptr i, getSpec ptr i ⊑ get' ptr i.
+Proof.
+  intros.
+  READ ptr vInPtr.
+  inversion X0; subst; simpl in *; eauto.
+  destruct vInPtr as [ | j v ptr' ]; simpl.
+  (* ptrVal = Arr *)
+  - apply returnStep; unfold_refinements; refine_simpl.
+    inversion X; subst; auto.
+    simpl in *.
+    rewrite e in H.
+    admit. (* inversion H should solve this... *)
+  - destruct (eq_nat_dec i j).
+    + subst.
+      rewrite <- beq_nat_refl.
+      apply returnStep; unfold_refinements; refine_simpl.
+      inversion X.
+      subst; simpl in *.
+      rewrite e in H.
+      admit. (* inversion H should solve this... *)
+      subst; simpl in *.
+      unfold upd.
+      assert (i = j) by admit.
+      assert (v = v0) by admit.
+      subst.
+      now rewrite <- beq_nat_refl.
+    + rewrite <- PeanoNat.Nat.eqb_neq in n.
+      rewrite n.
+      unfold getSpec.
+      refine (Refinement _ _ _ _).
+      Unshelve. Focus 2.
+      refine_simpl; auto.
+      
+      inversion X; simpl in *; subst.
+      rewrite e in H.
+      admit. (* inversion H should solve this... *)
+      assert (ptr' = p'). admit.
+      subst.
+      exists f; auto.
+      refine_simpl.
+      admit. (* isn't this i X? *)
+      
+      inversion X0; simpl in *; subst.
+      clear X.
+      rewrite e in H.
+      admit. (* inversion H should solve this... *)
+      
+      assert (ptr' = p'). admit.
+      assert (j = i0). admit.
+      assert (v = v1). admit.
+      subst.
+      unfold upd.
+      rewrite n.
+      admit. (* isn't this i X? *)
+Admitted.
 
 (*
 Parameter N : nat.
