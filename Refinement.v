@@ -6,7 +6,9 @@ Require Import Program.Tactics.
                     ****   Basic definitions ****
 *******************************************************************************)
 
-Definition S := heap.
+Section Refinement.
+  Variable t : Type.
+  Definition S := heap t.
 
 Definition Pow : Type -> Type := fun a => a -> Type.
 
@@ -116,15 +118,15 @@ Definition BindPT {a b : Type} (pt1 : PT a) (pt2 : a -> PT b) : PT b :=
 
 Notation "pt1 ⟫= pt2" := (BindPT pt1 pt2) (at level 52, right associativity).
 
-Definition NewPT {a : Type} (x : a) : PT Addr.t :=              
-  Predicate _ (fun s => True) 
-              (fun s _ p s' => 
-                 (forall p', p' <> p -> find s p = find s' p')
-                 /\ find s' p = Some (dyn _ x)).
+(* Definition NewPT (x : t) : PT Addr.t :=               *)
+(*   Predicate _ (fun s => True)  *)
+(*               (fun s _ p s' =>  *)
+(*                  (forall p', p' <> p -> find _ s p = find _ s' p') *)
+(*                  /\ find _ s' p = Some t). *)
 
-Definition ReadPT {a : Type} (ptr : Addr.t) : PT a :=
-  Predicate _ (fun s => exists v, find s ptr = Some (dyn a v)) 
-              (fun s pres v s' => (s = s') /\ (Some (dyn a v) = find s ptr)).
+(* Definition ReadPT {a : Type} (ptr : Addr.t) : PT a := *)
+(*   Predicate _ (fun s => exists v, find s ptr = Some (dyn a v))  *)
+(*               (fun s pres v s' => (s = s') /\ (Some (dyn a v) = find s ptr)). *)
 
 Definition Is_false (b : bool) :=
   match b with
@@ -155,3 +157,4 @@ Definition SeqPT {a b : Type} (pt1 : PT a) (pt2 : PT b) : PT b :=
 
 Notation "pt1 ;; pt2" := (SeqPT pt1 pt2) (at level 52, right associativity).
 
+End Refinement.
