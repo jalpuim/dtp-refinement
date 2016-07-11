@@ -12,6 +12,7 @@ Require Import Program.Equality.
                     ****   The While language ****
 *******************************************************************************)
 
+Section WHILE.
 Definition Ptr := Addr.t.
 
 Variable v : Type.
@@ -171,9 +172,9 @@ Proof.
   * refine_simpl.
     assert (valid : {y : v & find _ s ptr = Some y}) by now apply H.
     exists valid.
-    destruct valid as [v P]; destruct (Step v) as [d h].
+    destruct valid as [x P]; destruct (Step x) as [d h].
     refine_simpl.
-    destruct (semantics (w' v)).
+    destruct (semantics (w' x)).
     destruct spec.
     apply d; split; auto.
   * intros s p x s' X; destruct spec; refine_simpl.
@@ -385,6 +386,7 @@ Proof.
   apply n; eauto.
 Admitted.
 
+End WHILE.
 
 (*******************************************************************************
                 ****  Union-Find refinement example ****
@@ -425,11 +427,11 @@ Inductive pa_valid (s : heap) : Ptr -> Type :=
    2. p points to different "Diff", which is a change of another valid array,
       in one position only, updating the other array in that position (using upd)
 *)
-Inductive pa_model (s : heap) : Ptr -> (nat -> nat) -> Type :=
+Inductive pa_model (s : heap data) : Ptr -> (nat -> nat) -> Type :=
   | pa_model_array :
-     forall p f, find s p = Some (dyn data (Arr f)) -> pa_model s p f
+     forall p f, find _ s p = Some ((Arr f)) -> pa_model s p f
   | pa_model_diff :
-     forall p i v p', find s p = Some (dyn data (Diff i v p')) ->
+     forall p i v p', find _ s p = Some (Diff i v p') ->
                    forall f, pa_model s p' f ->
                         pa_model s p (upd f i v).
 
@@ -445,22 +447,22 @@ Qed.
 
 (** SET **)
 
-Definition newRef {a} (v : a) : WhileL Ptr :=
-  New _ _ v (fun ptr => Return _ ptr).
+Definition newRef (x : data) : WhileL data Ptr :=
+  New _ _ x (fun ptr => Return _ _ ptr).
 
 (* The original set implementation (i.e. no path compression), 
 presented in Page 3 *)
-Definition set (t : Ptr) (i : nat) (v : nat) : WhileL Ptr :=
-  Read _ data t (fun vInT =>
+Definition set (t : Ptr) (i : nat) (v : nat) : WhileL data Ptr :=
+  Read _ _ t (fun vInT =>
   match vInT with
   | Arr f => New _ _ (Arr (upd f i v))
-                (fun res => Write _ data t (Diff i (f i) res) (Return _ res))
+                (fun (res : Ptr) => Write _ _ t (Diff i (f i) res) (Return _ _ res))
   | Diff _ _ _ => newRef (Diff i v t)
   end).
 
-Definition setSpec (ptr : Ptr) (i : nat) (v : nat) : WhileL Ptr.
-  refine (Spec _ _).
-  refine (Predicate _ (fun s => { f : nat -> nat & pa_model s ptr f}) _).
+Definition setSpec (ptr : Ptr) (i : nat) (v : nat) : WhileL data Ptr.
+  refine (Spec _ _ _).
+  refine (Predicate _ _ (fun s => { f : nat -> nat & pa_model s ptr f}) _).
   intros s [f H] newPtr s'.
   apply (prod (pa_model s' newPtr (upd f i v))
               (pa_model s' ptr f)).
@@ -477,7 +479,7 @@ Admitted.
 (* Application of pa_model_diff when "f" does not directly read as an upd *)
 Lemma pa_model_diff_2 :
   forall p : Ptr, forall i v p', forall f f' s,
-  find s p = Some (dyn data (Diff i v p')) -> 
+  find _ s p = Some ((Diff i v p')) -> 
   pa_model s p' f' ->
   f = upd f' i v ->
   pa_model s p f. 
@@ -485,7 +487,7 @@ Proof.
 Admitted.
 
 Lemma pa_model_alloc :
-  forall s t' f v, pa_model s t' f -> pa_model (update s (alloc s) v) t' f.
+  forall s t' f v, pa_model s t' f -> pa_model (update _ s (alloc _ s) v) t' f.
 Proof.
   intros.
   induction X; auto.
@@ -503,15 +505,16 @@ Qed.
 Lemma pa_model_sep :
   forall s t i f v t',
     t <> t' -> 
-    pa_model s t f -> pa_model (update s t' (dyn data (Diff i v t))) t f.
+    pa_model s t f -> pa_model (update _ s t' ((Diff i v t))) t f.
 Proof.
   intros.
   intros; generalize dependent t'.
   induction X; intros.
   - apply pa_model_array.
-    rewrite findNUpdate1 with (x := Some (dyn data (Arr f))); auto.
+    rewrite findNUpdate1 with (x := Some ((Arr f))); auto.
   - apply pa_model_diff with (p' := p'); auto.
-    admit.
+    now eapply findNUpdate1.
+    
 Admitted.
 
 Lemma setRefinement : forall ptr i v, setSpec ptr i v ⊑ set ptr i v.
