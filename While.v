@@ -485,11 +485,8 @@ Print simplSwap.
 Set Implicit Arguments.
 Require Export Wf_nat.
 
-(* function that gives the elements for the original array *)
-Parameter parray : nat -> nat.
-
 Inductive data : Type :=
-  | Arr : data
+  | Arr : (nat -> nat) -> data
   | Diff : nat -> nat -> Ptr -> data.
 
 (* Updates an array at index i with v. I don't know why they used integers 
@@ -502,35 +499,175 @@ Definition upd (f : nat -> nat) (i : nat) (v : nat) :=
    1. p points to the original array "Arr"
    2. p points to different "Diff", which is a change of another valid array,
       in one position only.
-*)
+ *)
+(* Not in use at the moment *)
+(*
 Inductive pa_valid (s : heap) : Ptr -> Type :=
-  | array_pa_valid : forall p, find s p = Some (dyn data Arr) -> pa_valid s p
+  | array_pa_valid : forall l p, find s p = Some (dyn data (Arr l)) -> pa_valid s p
   | diff_pa_valid : forall p i v p', find s p = Some (dyn data (Diff i v p')) ->
                                 pa_valid s p' ->
                                 pa_valid s p.
+*)
 
 (* 
    pa_model states that, given a pointer "p", we either have: 
-   1. p points to the original array "Arr", with elements given by (Z -> Z)
+   1. p points to an array "Arr", with elements given by (Z -> Z)
    2. p points to different "Diff", which is a change of another valid array,
       in one position only, updating the other array in that position (using upd)
 *)
 Inductive pa_model (s : heap) : Ptr -> (nat -> nat) -> Type :=
   | pa_model_array :
-     forall p, find s p = Some (dyn data Arr) -> pa_model s p parray
+     forall p f, find s p = Some (dyn data (Arr f)) -> pa_model s p f
   | pa_model_diff :
      forall p i v p', find s p = Some (dyn data (Diff i v p')) ->
-                 forall f, pa_model s p' f ->
-                      pa_model s p (upd f i v).
+                   forall f, pa_model s p' f ->
+                        pa_model s p (upd f i v).
 
+(*
 Lemma pa_model_pa_valid :
   forall m p f, pa_model m p f -> pa_valid m p.
 Proof.
   induction 1.
-  apply array_pa_valid; auto.
+  eapply array_pa_valid; eauto.
   apply diff_pa_valid with (i:=i) (v:=v) (p':=p'); auto.
 Qed.
+*)
 
+(** SET **)
+
+Definition newRef {a} (v : a) : WhileL Ptr :=
+  New _ _ v (fun ptr => Return _ ptr).
+
+(* The original set implementation (i.e. no path compression), 
+presented in Page 3 *)
+Definition set (t : Ptr) (i : nat) (v : nat) : WhileL Ptr :=
+  Read _ data t (fun vInT =>
+  match vInT with
+  | Arr f => New _ _ (Arr (upd f i v))
+                (fun res => Write _ data t (Diff i (f i) res) (Return _ res))
+  | Diff _ _ _ => newRef (Diff i v t)
+  end).
+
+Definition setSpec (ptr : Ptr) (i : nat) (v : nat) : WhileL Ptr.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => { f : nat -> nat & pa_model s ptr f}) _).
+  intros s [f H] newPtr s'.
+  apply (prod (pa_model s' newPtr (upd f i v))
+              (pa_model s' ptr f)).
+Defined.
+
+(** Auxiliary lemmas about pa_model / upd. Taken from puf.v. **)
+
+Axiom upd_ext : forall f g : nat -> nat, (forall i, f i = g i) -> f = g.
+
+Lemma upd_eq : forall f i j v, i = j -> upd f i v j = v.
+Proof.
+Admitted.
+
+(* Application of pa_model_diff when "f" does not directly read as an upd *)
+Lemma pa_model_diff_2 :
+  forall p : Ptr, forall i v p', forall f f' s,
+  find s p = Some (dyn data (Diff i v p')) -> 
+  pa_model s p' f' ->
+  f = upd f' i v ->
+  pa_model s p f. 
+Proof.
+Admitted.
+
+Lemma pa_model_alloc :
+  forall s t' f v, pa_model s t' f -> pa_model (update s (alloc s) v) t' f.
+Proof.
+  intros.
+  induction X; auto.
+  - apply pa_model_array.
+    rewrite findAlloc1; auto.
+    now apply someIn in e.
+  - apply pa_model_diff with (p' := p'); auto.
+    rewrite findAlloc1; auto.
+    now apply someIn in e.
+Qed.
+
+(* If we have a model for a given pointer, 
+   then a heap with an extra indirection step to this pointer is a model *)
+(* TODO double-check this def, since it was *not* taken from puf.v *)
+Lemma pa_model_sep :
+  forall s t i f v t',
+    t <> t' -> 
+    pa_model s t f -> pa_model (update s t' (dyn data (Diff i v t))) t f.
+Proof.
+  intros.
+  intros; generalize dependent t'.
+  induction X; intros.
+  - apply pa_model_array.
+    rewrite findNUpdate1 with (x := Some (dyn data (Arr f))); auto.
+  - apply pa_model_diff with (p' := p'); auto.
+    admit.
+Admitted.
+
+Lemma setRefinement : forall ptr i v, setSpec ptr i v ⊑ set ptr i v.
+Proof.
+  intros; unfold set, setSpec.
+  assert (Hf1 : forall (A : Type) (a b : A), Some a = Some b -> a = b) by
+      (intros A a b HInv; now inversion HInv).
+  assert (Hf2 : forall (A : Type) t1 t2, dyn A t1 = dyn A t2 -> t1 = t2) by
+      (intros A t1 t2 HInv; inversion HInv; now apply inj_pair2 in H0).
+  READ ptr vInPtr.
+  inversion X0; eauto.
+  destruct vInPtr as [ f | j vInJ t' ].
+  - NEW (Arr (upd f i v)) res.
+    inversion X; subst.
+    rewrite e in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    symmetry in H1; subst.
+    exists f.
+    apply pa_model_array.
+    rewrite findAlloc1; auto.
+    now apply someIn in e.
+    rewrite e in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    (* WRITE ptr (Diff i (f i) ptr). *)
+    eapply writeSpec.
+    refine_simpl; heap_simpl.
+    inversion X0; subst.
+    rewrite e0 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    symmetry in H1; subst; clear H.
+    exists (Arr f).
+    rewrite findNUpdate1 with (x := Some (dyn data (Arr f))); auto.
+    apply n.
+    now apply someIn in e0.
+    rewrite e0 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    RETURN.
+    inversion X; subst.
+    rewrite e1 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    symmetry in H1; subst; clear H.
+    apply pa_model_array.
+    erewrite findNUpdate1 with (x := Some (dyn data (Arr (upd f i v)))); auto.
+    admit. (* provable *)
+    rewrite e1 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    inversion X; subst.
+    rewrite e1 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    symmetry in H1; subst; clear H.
+    apply pa_model_diff_2 with (i := i) (v := f i) (p := ptr) (p' := res)
+                                       (f' := upd f i v); auto.
+    apply pa_model_array; eauto.
+    admit. (* provable *)
+    rewrite e1 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+  - unfold newRef.
+    NEW (Diff i v ptr) res.
+    inversion X; subst.
+    rewrite e in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    rewrite e in H; apply Hf1 in H; apply Hf2 in H; symmetry in H; inversion H.
+    subst; clear H.
+    exists (upd f j vInJ).
+    apply pa_model_diff with (p := ptr) (p' := t').
+    rewrite findAlloc1; auto.
+    now apply someIn in e.
+    now apply pa_model_alloc.
+    RETURN.
+    apply pa_model_diff with (p' := ptr); auto.
+    apply pa_model_sep; eauto.
+    apply pa_model_sep; eauto.
+Admitted.
+
+(*** GET ***)
 (* The adapted spec from Ch.4 *)
 (*
 Definition get : 
@@ -538,7 +675,41 @@ Definition get :
   forall i, { v:Z | forall f, pa_model m p f -> v = f i }.
 *)
 
-(* The original get implementation, presented in Page 3 *)
+Definition get (ptr : Ptr) (i : nat) : WhileL nat.
+refine (
+  Read _ data ptr (fun vInPtr =>
+  New _ data vInPtr (fun t =>
+  New _ (option nat) None (fun done =>
+      While _ (fun s => True)
+              (fun s => _ ) (* find s done Nat.eqb (dyn _ None) *)
+              (Read _ data t (fun vInT => _ ))
+              (Read _ (option nat) done
+                    (fun vInDone => match vInDone with
+                                     | None => Return _ 0 (* absurd *)
+                                     | Some a => Return _ a
+                                   end)))))).
+admit. (* TODO how do to defined boolean equality on dynamic *)
+destruct vInT as [ f | j v t' ].
+refine (Write _ _ done (Some (f i)) (Return _ tt)).
+refine (if Nat.eqb i j
+        then _
+        else _).
+refine (Write _ _ done (Some v) (Return _ tt)).
+refine (Read _ data t' (fun vInT' => Write _ (option data) done (Some vInT')
+                                          (Return _ tt))).
+Admitted.
+
+Definition getSpec : Ptr -> nat -> WhileL nat.
+  intros ptr i.
+  refine (Spec _ _).
+  refine (Predicate _ (fun s => { f : nat -> nat & pa_model s ptr f}) _).
+  intros s [f H] v.
+  refine (fun s' => prod (s = s') (v = f i)).
+Defined.
+
+(** STOP HERE **)
+
+    
 Fixpoint get' (n : nat) (ptr : Ptr) (i : nat) : WhileL nat := 
   Read _ data ptr
        (fun ptrVal => match n, ptrVal with
@@ -575,14 +746,6 @@ Admitted.
 
 
 (* A (non-executable) implementation fulfilling only partial-correctness *)
-
-Definition getSpec : Ptr -> nat -> WhileL nat.
-  intros ptr i.
-  refine (Spec _ _).
-  refine (Predicate _ (fun s => { f : nat -> nat & pa_model s ptr f}) _).
-  intros s [f H] v.
-  refine (fun s' => prod (s = s') (v = f i)).
-Defined.
 
 Definition get (ptr : Ptr) (i : nat) : WhileL nat := 
   Read _ data ptr
