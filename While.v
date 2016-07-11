@@ -137,7 +137,7 @@ Definition refineRefl {a} (w : WhileL a) :
                    ****   Refinement properties ****
 *******************************************************************************)
 
-Lemma newStep {a b : Type} (w : WhileL a) (w' : Ptr -> WhileL a)
+Lemma newRefines {a b : Type} (w : WhileL a) (w' : Ptr -> WhileL a)
   (v : b)
   (H : pre (semantics w) ⊂ pre (semantics (New _ _ v w')))
   (Q : forall (s : S) (x : pre (semantics w) s) (v' : a),
@@ -147,7 +147,7 @@ Proof.
   exact (Refinement _ _ H Q).
 Qed.  
 
-Lemma readStep {a b : Type} (w : WhileL a) (w' : b -> WhileL a)
+Lemma readRefines {a b : Type} (w : WhileL a) (w' : b -> WhileL a)
   (ptr : Ptr)
   (H : pre (semantics w) ⊂ pre (semantics (Read a b ptr w')))
   (Q : forall s p x s', 
@@ -165,7 +165,7 @@ Lemma readSpec {a b : Type} (ptr : Ptr)  (spec : PT a) (w' : b -> WhileL a)
                        , fun s pres x s' => post spec s (fst pres) x s' ]) ⊑ w' v) :
   Spec _ spec ⊑ Read _ b ptr w'.
 Proof.
-  eapply readStep. Unshelve. Focus 2.
+  unshelve eapply readRefines.
   * refine_simpl.
     assert (valid : {v : b & find s ptr = Some (dyn b v)}) by now apply H.
     exists valid.
@@ -201,7 +201,7 @@ Lemma newSpec {a b : Type} (v : b) (spec : PT a) (w : Ptr -> WhileL a)
                         , fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s' ]) ⊑ w p) :
   Spec _ spec ⊑ New _ b v w.
 Proof.
-  eapply newStep. Unshelve. Focus 2.
+  unshelve eapply newRefines.
   * refine_simpl;
     exists (alloc s); split;
     destruct (Step (alloc s)) as [d h];
@@ -219,7 +219,21 @@ Proof.
     now simpl in X.
 Qed.
 
-Lemma writeStep {a b : Type} (w w' : WhileL a) (ptr : Ptr) (v : b)
+Lemma newStep {a b : Type} (v : b) (spec : PT a) 
+      (H : forall s, pre spec s -> pre spec (update s (alloc s) (dyn b v)))
+      (Step : {w : (Ptr -> WhileL a) & forall (p : Ptr),
+                Spec _ ([ fun s => { t : S & prod (pre spec t)
+                                            (prod (forall p', M.In p' t -> p' <> p)
+                                                  (s = (update t p (dyn b v)))) }
+                        , fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s' ]) ⊑ w p}) :
+  {w : WhileL a & Spec _ spec ⊑ w}.
+  Proof.
+    destruct Step as [w S].
+    exists (New _ _ v w).
+    now apply newSpec.
+  Qed.
+
+Lemma writeRefines {a b : Type} (w w' : WhileL a) (ptr : Ptr) (v : b)
   (d : pre (semantics w) ⊂ pre (semantics (Write _ _ ptr v w'))) 
   (h : forall (s : S)(p : pre (semantics w) s)  (x : a) (s' : S), 
     post (semantics w') (update s ptr (dyn b v)) (snd (d s p)) x s' -> post (semantics w) s p x s')
@@ -236,21 +250,46 @@ Lemma writeSpec {a b : Type} (ptr : Ptr) (v : b) (spec : PT a) (w : WhileL a)
               (post spec (projT1 pres) (fst (projT2 pres)) x s') ]) ⊑ w) :
   Spec _ spec ⊑ Write _ b ptr v w.
 Proof.
-  destruct Step as [d h]; eapply writeStep. Unshelve. Focus 2.
+  destruct Step as [d h]; unshelve eapply writeRefines.
   * refine_simpl; destruct spec; [ now apply H | apply d; now exists s].
-  * refine_simpl.
-    destruct spec.
-    destruct (semantics w).
-    pose (h _ _ _ _ X).
-    now simpl in p2.
+  * refine_simpl; destruct spec; destruct (semantics w); pose (h _ _ _ _ X).
+    now trivial.
 Qed.
 
-Lemma returnStep {a : Type} (w : WhileL a) (v : a)
+Lemma writeStep {a b : Type} (ptr : Ptr) (v : b) (spec : PT a) 
+  (H : forall s, pre spec s -> {v : b & find s ptr = Some (dyn b v)})
+  (Step :  
+     {w : WhileL a & Spec _
+    ([ fun s => {t : S & prod (pre spec t) (s = (update t ptr (dyn b v)))},
+       fun s pres x s' => 
+              (post spec (projT1 pres) (fst (projT2 pres)) x s') ]) ⊑ w}) :
+  {w : WhileL a & Spec _ spec ⊑ w}.
+  Proof.
+    destruct Step as [w' A].
+    exists (Write _ _ ptr v w').
+    now apply writeSpec.
+  Qed.
+
+
+Lemma readStep {a b : Type} (ptr : Ptr)  (spec : PT a) 
+  (H : forall s, pre (spec) s -> {v : b & find s ptr = Some (dyn b v)})
+  (Step : {w : b -> WhileL a &
+            forall v, 
+            Spec _ ([ fun s => prod (pre spec s)
+                                   (find s ptr = Some (dyn b v))
+                    , fun s pres x s' => post spec s (fst pres) x s' ]) ⊑ w v}) :
+  {w : WhileL a & Spec _ spec ⊑ w}.
+Proof.
+  destruct Step as [w A].
+  exists (Read _ _ ptr w).
+  now apply readSpec.
+Qed.
+
+Lemma returnStep {a : Type} (v : a) (w : WhileL a) 
   (H : forall (s : S) (pre : preConditionOf w s), postConditionOf w s pre v s) : 
   w ⊑ Return a v.
 Proof.
-  eapply Refinement. refine_simpl; apply H.
-  Unshelve. refine_simpl.
+  unshelve eapply Refinement; refine_simpl; apply H.
 Qed.
 
 Lemma changeSpec {a : Type} (pt2 pt1 : PT a) (w : WhileL a)
@@ -313,28 +352,23 @@ Qed.
 Ltac heap_simpl := try (rewrite findAlloc1, findAlloc2 in * || rewrite findUpdate in * || rewrite findNUpdate1 in * || rewrite findNUpdate2 in *).
 Ltac goal_simpl :=  refine_simpl; heap_simpl; eauto.
 Ltac READ ptr v := eapply (readSpec ptr); [ | intros v]; goal_simpl.
-Ltac NEW v ptr := eapply (newSpec v); [ | intros ptr]; goal_simpl.
+Ltac NEW v ptr := eapply (newSpec v);  [ | intros ptr]; goal_simpl.
 Ltac WRITE ptr v := eapply (writeSpec ptr v); goal_simpl.
-Ltac ASSERT P := unshelve eapply (changeSpec P).
-Ltac RETURN := eapply returnStep; unfold_refinements; goal_simpl.
+Ltac ASSERT P := unshelve eapply (changeSpec P); goal_simpl.
+Ltac RETURN v := eapply (returnStep v); unfold_refinements; goal_simpl.
 
 (* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
 Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
-  let SetQinN (s : Ptr -> WhileL unit) :=
-      (Read _ a Q) (fun v => New _ _ v s) in
-  let SetPinQ (s : WhileL unit) :=
-      (Read _ a P) (fun v => Write _ _ Q v s) in
-  let SetNinP (N : Ptr) (s : WhileL unit) :=
-      (Read _ a N) (fun v => Write _ _ P v s) in
-  @SWAP a P Q ⊑ SetQinN (fun N => SetPinQ (SetNinP N (Return _ tt))).
+  {c : WhileL unit & @SWAP a P Q ⊑ c}.
 Proof.
+  econstructor; unfold SWAP.
   READ Q x.
   NEW x T.
   READ P y.
   WRITE Q y.
   READ T z.
   WRITE P z.
-  RETURN.
+  RETURN tt.
   eapply findNUpdate2; [ eauto | ].
   rewrite findUpdate.
   rewrite <- e2.
@@ -345,6 +379,8 @@ Proof.
   eapply findNUpdate2; [ eauto | ].
   now rewrite findUpdate.
 Qed.
+
+Print swapResult.
 
 Definition swapResult' (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
   let SetQinN (s : Ptr -> WhileL unit) :=
@@ -361,18 +397,20 @@ Proof.
   WRITE Q y.
   ASSERT ([fun s => {v : a & prod (find s T = Some (dyn a v)) 
                                        ({v' : a | find s P = Some (dyn a v')})}
-                     , fun s pres (v : unit) s' => find s' P = find s T /\ find s Q = find s' Q ]); [ refine_simpl; exists x; split; eauto | | ].
+                     , fun s pres (v : unit) s' => find s' P = find s T /\ find s Q = find s' Q ]).
+  { exists x; split; eauto. }
   { 
-    refine_simpl.
-    rewrite <- H0; rewrite findUpdate; rewrite <- e0.
+    rewrite <- H0. rewrite <- e0.
     now apply findNUpdate2; eauto.
+  }
+  {
     rewrite H.
     apply findNUpdate2; eauto.
     now rewrite findUpdate.
   }
   READ T z.
   WRITE P z.
-  RETURN.
+  RETURN tt.
 Qed.
 
 Definition simplSwapDumb (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
@@ -405,22 +443,37 @@ Definition simplSwapDumb (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
   trivial.
   Qed.
 
-Definition simplSwap (P : Ptr) (Q : Ptr) (D : P <> Q) (a : Type) :
-  let CODE :=
-      (Read _ a Q) (fun q => 
-       Read _ a P (fun p =>
-       Write _ _ Q p (
-       Write _ _ P q (Return _ tt))))
-  in @SWAP a P Q ⊑ CODE.
-  intros CODE; unfold CODE.
+Definition simplSwap {a : Type} (P : Ptr) (Q : Ptr) (D : P <> Q) :
+  {c : WhileL unit & (@SWAP a P Q ⊑ c) & isExecutable c}.
+  econstructor; unfold SWAP.
   READ Q q.
   READ P p.
   WRITE Q p.
   WRITE P q.
-  RETURN.
+  RETURN tt.
   apply findNUpdate2; [eauto | ].
   now rewrite findUpdate.
+  now trivial.
   Qed.
+
+Definition simplSwapAssert {a : Type} (P : Ptr) (Q : Ptr) (D : P <> Q) :
+  {c : WhileL unit & (@SWAP a P Q ⊑ c) & isExecutable c}.
+  econstructor; unfold SWAP.
+  READ Q q.
+  READ P p.
+  WRITE Q p.
+  ASSERT ([ fun s => {x : a | find s P = Some (dyn a x)} 
+         , fun s pres (x : unit) s' => find s' P = Some (dyn a q) /\ find s' Q = find s Q ]).
+  { now rewrite H0. }
+  { now rewrite H. } 
+  WRITE P q.
+  RETURN tt.
+  now trivial.
+Qed.
+
+Print simplSwap.
+
+
 (** End of example **)
 
 (*******************************************************************************
@@ -591,17 +644,14 @@ Proof.
 Admitted.
 
 (* attempt at defining recursion *)
-Inductive WhileL' (a : Type) : Type :=
-  | New'    : forall v, v -> (Ptr -> WhileL' a) -> WhileL' a
-  | Read'   : forall v, Ptr -> (v -> WhileL' a) -> WhileL' a
-  | Write'  : forall v, Ptr -> v -> WhileL' a  -> WhileL' a
-  | While'  : (S -> Prop) -> (S -> bool) -> WhileL' unit -> WhileL' a -> WhileL' a
-  | Spec'   : PT a -> WhileL' a
-  | Fix     : forall (R : S -> a -> a -> Prop) s,
-                well_founded (R s) ->
-                (* ... -> *)
-                WhileL' a
-  | Return' : a -> WhileL' a.
+Inductive WhileL' (I : Type) (O : I -> Type) (a : Type) : Type :=
+  | New'    : forall v, v -> (Ptr -> WhileL' O a) -> WhileL' O a
+  | Read'   : forall v, Ptr -> (v -> WhileL' O a) -> WhileL' O a
+  | Write'  : forall v, Ptr -> v -> WhileL' O a  -> WhileL' O a
+  | Spec'   : PT a -> WhileL' O a
+  | Call    : forall (i : I), (O i -> WhileL' O a) -> WhileL' O a
+  | Return' : a -> WhileL' O a.
+
 
 (*
 Parameter N : nat.
