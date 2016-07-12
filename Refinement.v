@@ -6,6 +6,8 @@ Require Import Program.Tactics.
                     ****   Basic definitions ****
 *******************************************************************************)
 
+Set Implicit Arguments.
+
 Section Refinement.
   Variable t : Type.
   Definition S := heap t.
@@ -30,12 +32,12 @@ Inductive PT (a : Type) : Type :=
 
 Definition pre {a : Type} (pt : PT a) : Pow S := 
   match pt with
-    | Predicate _ pre _ => pre
+    | Predicate pre _ => pre
   end.
 
 Definition post {a : Type} (pt : PT a) : (forall s : S, pre pt s -> a -> Pow S) :=
   match pt return (forall s : S, pre pt s -> a -> Pow S) with
-    | Predicate _ _pre p => p
+    | Predicate pre p => p
   end.
 
 Inductive Refines {a : Type} (pt1 pt2 : PT a) : Type :=
@@ -45,7 +47,7 @@ Inductive Refines {a : Type} (pt1 pt2 : PT a) : Type :=
 
 Notation "PT1 ⊏ PT2" := (Refines PT1 PT2) (at level 90, no associativity) : type_scope.
 
-Notation "[ p , q ]" := (Predicate _ p q) (at level 70) : type_scope.
+Notation "[ p , q ]" := (Predicate p q) (at level 70) : type_scope.
 
 Ltac refine_simpl  := unfold pre, post, K, Ka, subset in *; intros; simpl in *.
 Ltac destruct_pt a := refine_simpl; destruct_all (PT a).

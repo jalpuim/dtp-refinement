@@ -5,6 +5,8 @@ Require Export Coq.Structures.OrderedType.
 Require Import Omega.
 Require Import String.
 
+Set Implicit Arguments.
+
 (* Addresses *)
 
 Module Addr <: OrderedType.
@@ -87,7 +89,6 @@ End Addr.
 Module M := FMapAVL.Make(Addr).
 Module MFacts := WFacts_fun(Addr)(M).
 Import MFacts.
-
 Section Heaps.
   Variable (a : Type). 
   Definition heap: Type :=  M.t a.
@@ -103,6 +104,12 @@ Section Heaps.
     find (update h p d) p = Some d.
   Proof. 
     apply M.find_1; now apply M.add_1.
+  Qed.
+
+  Lemma findNUpdate (p p' : Addr.t) (D : p <> p') (h : heap) (v : a) :
+    find (update h p' v) p = find h p.
+  Proof.
+    unfold find, update; rewrite add_neq_o; now eauto.
   Qed.
 
   Lemma findNUpdate1 (h : heap) (p p' : Addr.t) (D : p <> p') (x : option a) (v : a) :
@@ -181,8 +188,9 @@ Section Heaps.
   Qed.
 
   Lemma allocFresh (h : heap) : find h (alloc h) = None.
-  Admitted.
-
+    apply MFacts.not_find_in_iff.
+    apply allocNotIn.
+  Qed.
 
   Lemma findAlloc1 (h : heap) (v : a) (p : Addr.t) :
     M.In p h ->
@@ -204,16 +212,25 @@ Section Heaps.
   Lemma allocDiff1 (v : a) (h : heap) (ptr : Addr.t) :
     find h ptr = Some v -> 
     ptr <> alloc h.
-  Admitted.
+  Proof.
+    intros H F; subst.
+    rewrite allocFresh in H.
+    discriminate.
+  Qed.
 
   Lemma allocDiff2 (v : a) (h : heap) (ptr : Addr.t) :
     find h ptr = Some v -> 
     alloc h <> ptr.
-  Admitted.
+  Proof.
+    intros H F; subst; rewrite allocFresh in H; discriminate.
+  Qed.
 
   Lemma someIn (v : a) (h : heap) (ptr : Addr.t) :
     find h ptr = Some v -> M.In ptr h.
-  Admitted.
+  Proof.
+    intros H; apply MFacts.in_find_iff; intros F.
+    unfold find in *; rewrite H in F; discriminate.
+  Qed.
 
   Lemma heapGrows (s : heap) (x y : a) (ptr : Addr.t) :
     find s ptr = Some x ->
@@ -241,7 +258,7 @@ Section Heaps.
     p <> q.
     Proof.
       intros H1 H2 Eq;
-      now (apply (H1 q); [eapply (someIn _ _ _ H2) | symmetry]).
+      now (apply (H1 q); [eapply (someIn _ _ H2) | symmetry]).
     Qed.
 
   Lemma freshDiff2 (s : heap) (p q : Addr.t) (v : a) :
@@ -250,7 +267,7 @@ Section Heaps.
     q <> p.
     Proof.
       intros H1 H2 Eq;
-      now (apply (H1 q); [eapply (someIn _ _ _ H2) | ]).
+      now (apply (H1 q); [eapply (someIn _ _ H2) | ]).
     Qed.    
 
   Lemma findUnique (s : heap) (p : Addr.t) (x y : a) :
