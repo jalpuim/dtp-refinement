@@ -219,9 +219,9 @@ Section Heaps.
     find h ptr = Some v -> M.In ptr h.
   Admitted.
 
-  Lemma heapGrows {b: Type} (s : heap) (x y : a) (ptr : Addr.t) :
-    find s ptr = Some (x) ->
-    {z : a | find (update s (alloc s) (x)) ptr = Some (x)}.
+  Lemma heapGrows (s : heap) (x y : a) (ptr : Addr.t) :
+    find s ptr = Some x ->
+    {z : a | find (update s (alloc s) (y)) ptr = Some (z)}.
     Proof.
       intros; exists x; eapply findNUpdate1; try eapply allocDiff1; eassumption.
     Qed.
@@ -257,7 +257,13 @@ Section Heaps.
       now (apply (H1 q); [eapply (someIn _ _ _ H2) | ]).
     Qed.    
 
-
+  Lemma findUnique (s : heap) (p : Addr.t) (x y : a) :
+    find s p = Some x -> find s p = Some y -> x = y.
+    Proof.
+      intros H1 H2.
+      assert (H : Some x = Some y) by now rewrite <- H1; rewrite <- H2.
+      now inversion H.
+    Qed.  
 
   Hint Resolve allocDiff1 allocDiff2 heapGrows someExists someExistsT someIn findAlloc1 findAlloc2 freshDiff1 freshDiff2 not_eq_sym.
 End Heaps.

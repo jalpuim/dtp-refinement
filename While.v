@@ -358,7 +358,6 @@ Lemma refineWhilePT {a} (inv : S v -> Prop) (cond : S v -> bool) (Q : S v -> Pro
     apply (Refinement _ _ _ d).
     intros; repeat split; refine_simpl; destruct_conjs; now auto.
 Qed.
-
 Ltac heap_simpl := try (rewrite findAlloc1, findAlloc2 in * || rewrite findUpdate in * || rewrite findNUpdate1 in * || rewrite findNUpdate2 in *).
 Ltac goal_simpl :=  refine_simpl; heap_simpl; eauto.
 Ltac READ ptr v := eapply (readSpec ptr); [ | intros v]; goal_simpl.
@@ -373,7 +372,9 @@ Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) :
 Proof.
   econstructor; unfold SWAP.
   READ Q x.
-  NEW x T. Focus 4.
+  NEW x T. eapply heapGrows; eassumption.
+  eapply heapGrows; eassumption.
+  Focus 2.
   READ P y. Focus 2.
   WRITE Q y. Focus 2.
   READ T z. Focus 2.
