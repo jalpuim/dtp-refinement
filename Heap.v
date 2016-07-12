@@ -75,8 +75,6 @@ Module Addr <: OrderedType.
       destruct (Addr.compare n m); unfold Addr.lt in *; unfold Addr.eq in *; subst; omega.
     Qed.
 
-  Hint Resolve maxProp1 maxProp2.
-
   Open Local Scope string_scope.
 
   Definition printAddr (a : addr) (show : nat -> string) : string := 
@@ -121,7 +119,6 @@ Section Heaps.
     intros H; unfold find, update; rewrite add_neq_o; now eauto.
   Qed.
 
-  Hint Resolve findUpdate findNUpdate1 findNUpdate2.
 
   Lemma findIn : forall ptr s v,
     find s ptr = Some (v) ->
@@ -203,7 +200,6 @@ Section Heaps.
     now apply findAlloc1.
   Qed.
 
-  Hint Resolve allocFresh findAlloc1 findAlloc2.
 
   Lemma allocDiff1 (v : a) (h : heap) (ptr : Addr.t) :
     find h ptr = Some v -> 
@@ -265,5 +261,4 @@ Section Heaps.
       now inversion H.
     Qed.  
 
-  Hint Resolve allocDiff1 allocDiff2 heapGrows someExists someExistsT someIn findAlloc1 findAlloc2 freshDiff1 freshDiff2 not_eq_sym.
 End Heaps.

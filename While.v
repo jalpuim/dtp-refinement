@@ -305,26 +305,9 @@ Lemma changeSpec {a : Type} (pt2 pt1 : PT _ a) (w : WhileL a)
     exact (Refinement _ _ _ d h).
   Qed.
 
-(** Just a brief example showing how the language currently looks like 
-    Contains some testing definitions to be moved elsewhere once proven.
-**)
-Definition SWAP (p q : Ptr): WhileL unit.
-  refine (Spec _ _).
-  refine (Predicate _ _ (fun s => prod {x : v | find _ s p = Some x} {y : v | find _ s q = Some y}) _).
-  intros s H t s'.
-  refine (find _ s p = find _ s' q /\ find _ s q = find _ s' p).
-Defined.
 
 
   
-(************************************************************
-
-                             SWAP EXAMPLE
-
-*************************************************************)
-
-  
-
 Definition refineIf {a} (cond : bool) (pt : PT _ a) :
   let branchPre (P : S v -> Prop) := fun s => prod (pre _ pt s) (P s) in
   let thenBranch := Predicate _ _ (branchPre (fun s => Is_true cond))
@@ -358,36 +341,72 @@ Lemma refineWhilePT {a} (inv : S v -> Prop) (cond : S v -> bool) (Q : S v -> Pro
     apply (Refinement _ _ _ d).
     intros; repeat split; refine_simpl; destruct_conjs; now auto.
 Qed.
+End WHILE.
+
+
+(************************************************************
+
+                             SWAP EXAMPLE
+
+*************************************************************)
+
+  
+
+(** Just a brief example showing how the language currently looks like 
+    Contains some testing definitions to be moved elsewhere once proven.
+**)
+Definition SWAP {a : Type} (p q : Ptr): WhileL a unit.
+  refine (Spec _ _ _).
+  refine (Predicate _ _ (fun s => prod {x : a | find _ s p = Some x} {y : a | find _ s q = Some y}) _).
+  intros s H t s'.
+  refine (find _ s p = find _ s' q /\ find _ s q = find _ s' p).
+Defined.
+
+Hint Resolve allocDiff1 allocDiff2 heapGrows someExists someExistsT someIn findAlloc1 findAlloc2 freshDiff1 freshDiff2 not_eq_sym.
+Hint Resolve findUpdate findNUpdate1 findNUpdate2.
+Hint Resolve allocFresh findAlloc1 findAlloc2.
+
+Ltac refine_unfold := unfold pre, post, subset, bind in *.
+Ltac refine_simpl := 
+  refine_unfold; intros; simpl in *; destruct_conjs; 
+  repeat split; repeat subst; simpl in *.
+Ltac unfold_refinements := unfold wrefines, semantics, preConditionOf, postConditionOf in *.
+
 Ltac heap_simpl := try (rewrite findAlloc1, findAlloc2 in * || rewrite findUpdate in * || rewrite findNUpdate1 in * || rewrite findNUpdate2 in *).
 Ltac goal_simpl :=  refine_simpl; heap_simpl; eauto.
-Ltac READ ptr v := eapply (readSpec ptr); [ | intros v]; goal_simpl.
-Ltac NEW v ptr := eapply (newSpec v);  [ | intros ptr]; goal_simpl.
-Ltac WRITE ptr v := eapply (writeSpec ptr v); goal_simpl.
-Ltac ASSERT P := unshelve eapply (changeSpec P); goal_simpl.
-Ltac RETURN v := eapply (returnStep v); unfold_refinements; goal_simpl.
+Ltac READ ptr v := eapply (readSpec _ ptr); [ | intros v]; goal_simpl.
+Ltac NEW v ptr := eapply (newSpec _ v);  [ | intros ptr]; goal_simpl.
+Ltac WRITE ptr v := eapply (writeSpec _ ptr v); goal_simpl.
+Ltac ASSERT P := unshelve eapply (changeSpec _ P); goal_simpl.
+Ltac RETURN v := eapply (returnStep _ v); unfold_refinements; goal_simpl.
 
+Notation "P1 ⊑ P2" := (wrefines _ P1 P2) (at level 90, no associativity).
 (* SWAP ⊑ (N ::= Var Q ; Q ::= Var P ; P ::= Var N) *)
-Definition swapResult (P : Ptr) (Q : Ptr) (D : P <> Q) :
-  {c : WhileL unit & SWAP P Q ⊑ c}.
+Definition swapResult {a : Type} (P : Ptr) (Q : Ptr) (D : P <> Q) :
+  {c : WhileL a unit & SWAP P Q ⊑ c}.
 Proof.
   econstructor; unfold SWAP.
   READ Q x.
-  NEW x T. eapply heapGrows; eassumption.
-  eapply heapGrows; eassumption.
-  Focus 2.
-  READ P y. Focus 2.
-  WRITE Q y. Focus 2.
-  READ T z. Focus 2.
-  WRITE P z. Focus 2.
+  NEW x T.
+  READ P y. 
+  WRITE Q y. 
+  READ T z. 
+  WRITE P z. 
   RETURN tt.
   eapply findNUpdate2; [ eauto | ].
   rewrite findUpdate.
   rewrite <- e2.
   apply findNUpdate1.
   apply n; eauto.
-Admitted.
-
-End WHILE.
+  trivial.
+  trivial.
+  rewrite <- e0.
+  apply findNUpdate2.
+  apply not_eq_sym.
+  apply n.
+  eauto.
+  now rewrite findUpdate.
+Qed.  
 
 (*******************************************************************************
                 ****  Union-Find refinement example ****
@@ -519,35 +538,6 @@ Qed.
 
 (* Tactics copied from While Section. To be removed later. *)
 
-Ltac unfold_refinements := unfold wrefines, semantics, preConditionOf, postConditionOf in *.
-Ltac refine_unfold := unfold pre, post, subset, bind in *.
-Ltac destruct_refines :=
-  match goal with
-    | p : ?Refinement _ |- _ => destruct p
-  end.
-Ltac destruct_pts :=
-  match goal with
-    | pt : ?PT _ |- _ => destruct pt
-  end.
-Ltac refine_simpl := 
-  refine_unfold; intros; simpl in *; destruct_conjs; 
-  repeat split; repeat subst; simpl in *.
-Ltac semantic_trivial := 
-  unfold semantics, pre, post; simpl; destruct_conjs; repeat split; now intuition.
-Ltac exists_now :=
-   match goal with
-    | x : ?t |- { y : ?t & _} => exists x
-    | x : ?t |- { y : ?t | _} => exists x
-    | _ => idtac
-   end.
-Ltac refine_trivial := unfold_refinements; refine_unfold; simpl in *; now intuition.
-Ltac heap_simpl := try (rewrite findAlloc1, findAlloc2 in * || rewrite findUpdate in * || rewrite findNUpdate1 in * || rewrite findNUpdate2 in *).
-Ltac goal_simpl :=  refine_simpl; heap_simpl; eauto.
-Ltac READ v ptr v := eapply (readSpec v ptr); [ | intros v]; goal_simpl.
-Ltac NEW v ptr := eapply (newSpec v);  [ | intros ptr]; goal_simpl.
-Ltac WRITE ptr v := eapply (writeSpec ptr v); goal_simpl.
-Ltac ASSERT P := unshelve eapply (changeSpec P); goal_simpl.
-Ltac RETURN v := eapply (returnStep v); unfold_refinements; goal_simpl.
 
 (** set refinement **)
 
@@ -567,9 +557,6 @@ Proof.
     rewrite findAlloc1; auto.
     now apply someIn in e.
     rewrite e in H; inversion H.
-    rewrite findAlloc1; auto.
-    now apply someIn in e.
-    (* WRITE ptr (Diff i (f i) ptr). *)
     eapply writeSpec.
     refine_simpl; heap_simpl.
     inversion X0; subst.
@@ -586,13 +573,11 @@ Proof.
     apply pa_model_array.
     erewrite findNUpdate1 with (x := Some (Arr (upd s1 i v))); auto.
     unfold not; intros; subst; apply someIn in e1; apply n in e1; now apply e1.
-    now rewrite findUpdate.
     rewrite e1 in H; inversion H.
     inversion X; subst.
     rewrite e1 in H; inversion H; symmetry in H1; subst; clear H.
     apply pa_model_diff_2 with (i := i) (v := f i) (p := ptr) (p' := res)
                                        (f' := upd f i v); auto.
-    apply findUpdate.
     apply pa_model_array.
     apply findNUpdate1.
     unfold not; intros; subst; apply someIn in e1; apply n in e1; now apply e1.
@@ -610,8 +595,6 @@ Proof.
     rewrite findAlloc1; auto.
     now apply someIn in e.
     now apply pa_model_alloc.
-    rewrite findAlloc1; auto.
-    now apply someIn in e.
     (* RETURN. *)
     apply returnStep; unfold_refinements; goal_simpl.
     apply pa_model_diff with (p' := ptr).
