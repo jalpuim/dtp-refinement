@@ -476,6 +476,11 @@ Lemma upd_eq : forall f i j v, i = j -> upd f i v j = v.
 Proof.
 Admitted.
 
+Lemma upd_eq_ext :
+  forall f i v, f = upd (upd f i v) i (f i).
+Proof.
+Admitted.
+  
 (* Application of pa_model_diff when "f" does not directly read as an upd *)
 Lemma pa_model_diff_2 :
   forall p : Ptr, forall i v p', forall f f' s,
@@ -486,99 +491,135 @@ Lemma pa_model_diff_2 :
 Proof.
 Admitted.
 
-Lemma pa_model_alloc :
-  forall s t' f v, pa_model s t' f -> pa_model (update _ s (alloc _ s) v) t' f.
-Proof.
-  intros.
-  induction X; auto.
-  - apply pa_model_array.
-    rewrite findAlloc1; auto.
-    now apply someIn in e.
-  - apply pa_model_diff with (p' := p'); auto.
-    rewrite findAlloc1; auto.
-    now apply someIn in e.
-Qed.
-
-(* If we have a model for a given pointer, 
-   then a heap with an extra indirection step to this pointer is a model *)
-(* TODO double-check this def, since it was *not* taken from puf.v *)
+(* Main separation lemma *)
 Lemma pa_model_sep :
-  forall s t i f v t',
-    t <> t' -> 
-    pa_model s t f -> pa_model (update _ s t' ((Diff i v t))) t f.
+  forall s t f v t',
+    ~ (M.In t' s) -> 
+    pa_model s t f -> pa_model (update _ s t' v) t f.
 Proof.
   intros.
   intros; generalize dependent t'.
   induction X; intros.
   - apply pa_model_array.
     rewrite findNUpdate1 with (x := Some ((Arr f))); auto.
+    unfold not; intros; subst.
+    apply someIn in e; contradiction.
   - apply pa_model_diff with (p' := p'); auto.
-    now eapply findNUpdate1.
-    
-Admitted.
+    apply findNUpdate1; auto.
+    unfold not; intros; subst.
+    apply someIn in e; contradiction.
+Qed.
 
-Lemma setRefinement : forall ptr i v, setSpec ptr i v ⊑ set ptr i v.
+Lemma pa_model_alloc :
+  forall s t' f v, pa_model s t' f -> pa_model (update _ s (alloc _ s) v) t' f.
+Proof.
+  intros; apply pa_model_sep; auto; apply allocNotIn.
+Qed.
+
+(* Tactics copied from While Section. To be removed later. *)
+
+Ltac unfold_refinements := unfold wrefines, semantics, preConditionOf, postConditionOf in *.
+Ltac refine_unfold := unfold pre, post, subset, bind in *.
+Ltac destruct_refines :=
+  match goal with
+    | p : ?Refinement _ |- _ => destruct p
+  end.
+Ltac destruct_pts :=
+  match goal with
+    | pt : ?PT _ |- _ => destruct pt
+  end.
+Ltac refine_simpl := 
+  refine_unfold; intros; simpl in *; destruct_conjs; 
+  repeat split; repeat subst; simpl in *.
+Ltac semantic_trivial := 
+  unfold semantics, pre, post; simpl; destruct_conjs; repeat split; now intuition.
+Ltac exists_now :=
+   match goal with
+    | x : ?t |- { y : ?t & _} => exists x
+    | x : ?t |- { y : ?t | _} => exists x
+    | _ => idtac
+   end.
+Ltac refine_trivial := unfold_refinements; refine_unfold; simpl in *; now intuition.
+Ltac heap_simpl := try (rewrite findAlloc1, findAlloc2 in * || rewrite findUpdate in * || rewrite findNUpdate1 in * || rewrite findNUpdate2 in *).
+Ltac goal_simpl :=  refine_simpl; heap_simpl; eauto.
+Ltac READ v ptr v := eapply (readSpec v ptr); [ | intros v]; goal_simpl.
+Ltac NEW v ptr := eapply (newSpec v);  [ | intros ptr]; goal_simpl.
+Ltac WRITE ptr v := eapply (writeSpec ptr v); goal_simpl.
+Ltac ASSERT P := unshelve eapply (changeSpec P); goal_simpl.
+Ltac RETURN v := eapply (returnStep v); unfold_refinements; goal_simpl.
+
+(** set refinement **)
+
+Lemma setRefinement : forall ptr i v, wrefines _ (setSpec ptr i v) (set ptr i v).
 Proof.
   intros; unfold set, setSpec.
-  assert (Hf1 : forall (A : Type) (a b : A), Some a = Some b -> a = b) by
-      (intros A a b HInv; now inversion HInv).
-  assert (Hf2 : forall (A : Type) t1 t2, dyn A t1 = dyn A t2 -> t1 = t2) by
-      (intros A t1 t2 HInv; inversion HInv; now apply inj_pair2 in H0).
-  READ ptr vInPtr.
+  (* READ ptr vInPtr. *)
+  apply readSpec; [ | intros vInPtr]; goal_simpl.
   inversion X0; eauto.
   destruct vInPtr as [ f | j vInJ t' ].
-  - NEW (Arr (upd f i v)) res.
+  - apply newSpec; [ | intros res]; goal_simpl.
+    (* NEW (Arr (upd f i v)) res. *)
     inversion X; subst.
-    rewrite e in H; apply Hf1 in H; apply Hf2 in H; inversion H.
-    symmetry in H1; subst.
-    exists f.
+    rewrite e in H; inversion H; symmetry in H; subst.
+    exists s0.
     apply pa_model_array.
     rewrite findAlloc1; auto.
     now apply someIn in e.
-    rewrite e in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    rewrite e in H; inversion H.
+    rewrite findAlloc1; auto.
+    now apply someIn in e.
     (* WRITE ptr (Diff i (f i) ptr). *)
     eapply writeSpec.
     refine_simpl; heap_simpl.
     inversion X0; subst.
-    rewrite e0 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
-    symmetry in H1; subst; clear H.
+    rewrite e0 in H; inversion H; symmetry in H1; subst; clear H.
     exists (Arr f).
-    rewrite findNUpdate1 with (x := Some (dyn data (Arr f))); auto.
+    rewrite findNUpdate1 with (x := Some (Arr f)); auto.
     apply n.
     now apply someIn in e0.
-    rewrite e0 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
-    RETURN.
+    rewrite e0 in H; inversion H.
+    (* RETURN. *)
+    apply returnStep; unfold_refinements; goal_simpl.
     inversion X; subst.
-    rewrite e1 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
-    symmetry in H1; subst; clear H.
+    rewrite e1 in H; inversion H; subst; clear H.
     apply pa_model_array.
-    erewrite findNUpdate1 with (x := Some (dyn data (Arr (upd f i v)))); auto.
-    admit. (* provable *)
-    rewrite e1 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    erewrite findNUpdate1 with (x := Some (Arr (upd s1 i v))); auto.
+    unfold not; intros; subst; apply someIn in e1; apply n in e1; now apply e1.
+    now rewrite findUpdate.
+    rewrite e1 in H; inversion H.
     inversion X; subst.
-    rewrite e1 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
-    symmetry in H1; subst; clear H.
+    rewrite e1 in H; inversion H; symmetry in H1; subst; clear H.
     apply pa_model_diff_2 with (i := i) (v := f i) (p := ptr) (p' := res)
                                        (f' := upd f i v); auto.
-    apply pa_model_array; eauto.
-    admit. (* provable *)
-    rewrite e1 in H; apply Hf1 in H; apply Hf2 in H; inversion H.
+    apply findUpdate.
+    apply pa_model_array.
+    apply findNUpdate1.
+    unfold not; intros; subst; apply someIn in e1; apply n in e1; now apply e1.
+    apply findUpdate.
+    apply upd_eq_ext.
+    rewrite e1 in H; inversion H.
   - unfold newRef.
-    NEW (Diff i v ptr) res.
+    apply newSpec; [ | intros res]; goal_simpl.
+    (* NEW (Diff i v ptr) res. *)
     inversion X; subst.
-    rewrite e in H; apply Hf1 in H; apply Hf2 in H; inversion H.
-    rewrite e in H; apply Hf1 in H; apply Hf2 in H; symmetry in H; inversion H.
-    subst; clear H.
+    rewrite e in H; inversion H.
+    rewrite e in H; symmetry in H; inversion H; subst; clear H.
     exists (upd f j vInJ).
     apply pa_model_diff with (p := ptr) (p' := t').
     rewrite findAlloc1; auto.
     now apply someIn in e.
     now apply pa_model_alloc.
-    RETURN.
-    apply pa_model_diff with (p' := ptr); auto.
-    apply pa_model_sep; eauto.
-    apply pa_model_sep; eauto.
-Admitted.
+    rewrite findAlloc1; auto.
+    now apply someIn in e.
+    (* RETURN. *)
+    apply returnStep; unfold_refinements; goal_simpl.
+    apply pa_model_diff with (p' := ptr).
+    apply findUpdate.
+    apply someIn in e0; apply pa_model_sep; auto.
+    unfold not; intros H; apply n in H; now apply H.
+    apply someIn in e0; apply pa_model_sep; auto.
+    unfold not; intros H; apply n in H; now apply H.
+Qed.
 
 (*** GET ***)
 (* The adapted spec from Ch.4 *)
