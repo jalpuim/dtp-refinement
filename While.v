@@ -24,7 +24,7 @@ Inductive WhileL (a : Type) : Type :=
   | New    : v -> (Ptr -> WhileL a) -> WhileL a
   | Read   : Ptr -> (v -> WhileL a) -> WhileL a
   | Write  : Ptr -> v -> WhileL a  -> WhileL a
-  | While  : (S v -> Prop) -> (S v -> bool) -> WhileL unit -> WhileL a -> WhileL a
+  | While  : (S v -> Type) -> (S v -> bool) -> WhileL unit -> WhileL a -> WhileL a
   | Spec   : PT v a -> WhileL a
   | Return : a -> WhileL a.
 
@@ -310,10 +310,11 @@ Admitted.
 
 (** While (loop) **)
 
-Lemma refineWhilePT {a} (inv : S v -> Prop) (cond : S v -> bool) (Q : S v -> Prop) : 
-  let pt := Predicate (inv) (fun s _ _ s' => inv s' /\ Q s') in
-  let body : PT _ a := Predicate (fun s => inv s /\ Is_true (cond s)) (fun _ _ _ s' => inv s') in
-  (forall s, Is_false (cond s) /\ inv s -> Q s) ->
+(* TODO how to include continuation? *)
+Lemma refineWhilePT {a} (inv : S v -> Type) (cond : S v -> bool) (Q : S v -> Type) : 
+  let pt := Predicate (inv) (fun s _ _ s' => prod (inv s) (Q s')) in
+  let body : PT _ a := Predicate (fun s => prod (inv s) (Is_true (cond s))) (fun _ _ _ s' => inv s') in
+  (forall s, prod (Is_false (cond s)) (inv s) -> Q s) ->
   Refines pt (WhilePT inv cond body).
   Proof.
     intros pt body QH; simpl in *.
@@ -323,6 +324,37 @@ Lemma refineWhilePT {a} (inv : S v -> Prop) (cond : S v -> bool) (Q : S v -> Pro
     intros; repeat split; refine_simpl; destruct_conjs; now auto.
   Qed.
 
+(*
+Lemma whileRefines {a : Type} (k : WhileL a) (body : WhileL unit) (w : PT _ a)
+      (cond : S v -> bool) (inv : S v -> Type)
+      (H1 : forall s, pre w s -> (if cond s
+                            then pre (semantics body) s
+                            else pre (semantics k) s) * inv s)
+      (H2 : forall s pre a s', Is_true (cond s) * inv s *
+                          post (semantics body) s pre a s' ->
+                          inv s)
+      (H3 : forall s, Is_false (cond s) * inv s -> pre (semantics k) s)
+      (* this is wrong – we want to referenced the "refined w" after
+         running the loop *)
+      (H4 : forall s pres pres' a s', post (semantics k) s pres a s' ->
+                                 post w s pres' a s') : 
+  Spec w ⊑ While inv cond body k.
+Proof.
+  destruct w.
+  unfold wrefines.
+  refine_simpl.
+  destruct (semantics k).
+  destruct (semantics body).
+  eapply (Refinement _ _).
+  Unshelve. Focus 2.
+  refine_simpl.
+  eapply H2.
+  apply H1 in X.
+  destruct (cond s).
+  repeat split.
+  now destruct X.
+Admitted. *)
+  
 (* Refine split at PT level *)
 Lemma refineSplitPT {a : Type} (w2 w4 : PT _ a) (w1 w3 : PT _ unit) :
   Spec w1 ⊑ Spec w3 ->
@@ -338,6 +370,7 @@ Proof.
 Qed.
 
 (* Refine split at WhileL level. Unfortunately it's tricky to prove. *)
+(*
 Lemma refineSplit {a : Type} (w2 : PT _ a) (w1 : PT _ unit) (w3 : WhileL unit)
       (w4 : WhileL a) :
   Spec w1 ⊑ w3 ->
@@ -350,10 +383,11 @@ Proof.
   Unshelve. Focus 2.
   refine_simpl.
 Admitted.
+*)
 
 (* Splitting a while loop and its continuation *)
 Lemma refineWhileFork {a : Type} (w k : WhileL a) (body : WhileL unit)
-      (cond : S v -> bool) (inv : S v -> Prop) :
+      (cond : S v -> bool) (inv : S v -> Type) :
   w ⊑ bind (While inv cond body (Return tt)) (fun _ => k) ->
   w ⊑ While inv cond body k.
 Proof.
@@ -362,7 +396,7 @@ Qed.
 
 Lemma refineWhile {a : Type} (k : WhileL a) (body : WhileL unit)
       (w1 : PT _ unit) (w w2 : PT _ a)
-      (cond : S v -> bool) (inv : S v -> Prop) :
+      (cond : S v -> bool) (inv : S v -> Type) :
   Spec w ⊑ bind (Spec w1) (fun _ => Spec w2) -> 
   Spec w1 ⊑ While inv cond body (Return tt) ->
   Spec w2 ⊑ k -> 
@@ -389,7 +423,7 @@ Proof.
   eexists.
   exists tt.
   eexists.
-  split; [ apply H | apply H0 ].
+  split; [ apply i | apply i0 ].
   split; eauto.
   destruct H2, H3,w1, w2.
   refine_simpl.
@@ -614,6 +648,25 @@ Proof.
     apply someIn in e; contradiction.
 Qed.
 
+(* Main separation lemma *)
+Lemma pa_model_sep' :
+  forall s t f v t',
+    find s t' = None -> 
+    pa_model s t f -> pa_model (update s t' v) t f.
+Proof.
+  intros.
+  intros; generalize dependent t'.
+  induction X; intros.
+  - apply pa_model_array.
+    rewrite findNUpdate1 with (x := Some ((Arr f))); auto.
+    unfold not; intros; subst.
+    rewrite H in e; inversion e.
+  - apply pa_model_diff with (p' := p'); auto.
+    apply findNUpdate1; auto.
+    unfold not; intros; subst.
+    rewrite H in e; inversion e.
+Qed.
+
 Lemma pa_model_alloc :
   forall s t' f v, pa_model s t' f -> pa_model (update s (alloc s) v) t' f.
 Proof.
@@ -676,9 +729,9 @@ Definition get :
   forall i, { v:Z | forall f, pa_model m p f -> v = f i }.
 *)
 
-Definition data_get_eqb_none (h : option data) : bool :=
+Definition data_get_eqb_some (h : option data) : bool :=
   match h with
-    | Some (ResultGet None) => true
+    | Some (ResultGet (Some x)) => true
     | _ => false
   end.
 
@@ -696,13 +749,13 @@ Definition get (ptr : Ptr) : WhileL unit :=
   }
 *)
 
-Definition get (ptr : Ptr) (i : nat) : WhileL data nat. Print data.
+Definition get (ptr : Ptr) (i : nat) : WhileL data nat.
 refine (
   Read ptr (fun vInPtr =>
   New vInPtr (fun t =>
   New (ResultGet None) (fun done =>
-  While (fun s => True)
-        (fun s => data_get_eqb_none (find s done))
+  While (fun s => { f : nat -> nat & pa_model s t f })
+        (fun s => negb (data_get_eqb_some (find s done)))
         (Read t (fun vInT => _ )) (* the body is refined below *)
         (Read done (fun vInDone =>
          match vInDone with
@@ -732,12 +785,36 @@ Definition getSpec : Ptr -> nat -> WhileL data nat.
   refine (Spec _). 
   refine (Predicate (fun s => { f : nat -> nat & pa_model s ptr f}) _).
   intros s [f H] v.
-  refine (fun s' => prod (s = s') (v = f i)).
+  refine (fun s' => v = f i).
 Defined.
 
 Hint Constructors pa_model.
 Hint Resolve pa_model_alloc pa_model_sep.
 
+Lemma refineSkipPT :
+  forall (w1 w2 : PT data unit),
+    Refines w1 w2 -> 
+    Refines w1 (SeqPT w2 (Predicate (fun _ => True)
+                                    (fun s _ v s' => s = s' /\ v = tt))).
+Proof.
+  intros.
+  destruct X.
+  destruct w1, w2.
+  refine_simpl.
+  eapply (Refinement _ _ _).
+  Unshelve. Focus 2.
+  refine_simpl; eauto.
+  refine_simpl.
+  assert (Ha : X0 = tt) by now induction X0.
+  subst.
+  Unshelve. Focus 2.
+  apply d.
+  apply X.
+  apply s.
+  apply X1.
+Qed.  
+
+(* get (using a loop) refinement *)
 Lemma getRefinement :  forall ptr i, wrefines (getSpec ptr i) (get ptr i).
 Proof.
   intros.
@@ -751,74 +828,84 @@ Proof.
   destruct_conjs; subst.
   exists X; repeat split; eauto.
   admit. (* this should be provable using heap lemmas *)
-  admit. (* while rule needed here *)
+  (* trying to split the proof *)
+  set (w1 := Predicate (fun s : S data =>
+       {t0 : S data &
+       ({t1 : S data &
+        {f : nat -> nat & pa_model t1 ptr f} * (find t1 ptr = Some vInPtr) *
+        ((forall (p' : M.key) (x : data), find t1 p' = Some x -> p' <> t) *
+         (t0 = update t1 t vInPtr))} *
+        ((forall (p' : M.key) (x : data), find t0 p' = Some x -> p' <> done) *
+         (s = update t0 done (ResultGet None))))%type})
+                    (fun s pres v s' =>
+                       { x : nat & prod (find s' done = Some (ResultGet (Some x)))
+                                      (x = projT1 (fst (fst (projT2 (fst (projT2 pres))))) i)}) : PT data unit).  
+  set (w2 := Predicate (fun s =>
+                       { f : nat -> nat &
+                       { x : nat & prod (find s done = Some (ResultGet (Some x)))
+                                      (x = f i)} })
+                    (fun s pres v s' => v = (projT1 pres) i)).
+  eapply refineWhile with (w1 := w1) (w2 := w2).
+  - destruct w1, w2.
+    refine_simpl.
+    eapply (Refinement _ _ _).
+    Unshelve. Focus 2.
+    refine_simpl.
+    admit.
+    refine_simpl.
+    admit.
+  - unfold wrefines.
+    simpl.
+    apply refineSkipPT.
+    eapply refineWhilePT with
+    (*
+    (cond := fun s => negb (data_get_eqb_some (find s done)))
+    (inv := (fun s : S data => {f : nat -> nat & pa_model s t f})) *)
+    (Q := fun s => prod (Is_false (negb (data_get_eqb_some (find s done))))
+                      ({ f : nat -> nat & pa_model s t f })).
+    admit.
+    admit.
+    admit.
+  - READ done vInDone.
+    destruct vInDone.
+    RETURN 0.
+    rewrite e in e0; inversion e0.
+    RETURN 0.
+    rewrite e in e0; inversion e0.
+    destruct o.
+    RETURN n.
+    now rewrite e in e0; inversion e0.
+    RETURN 0.
+    rewrite e in e0; inversion e0.
+    RETURN 0.
+    rewrite e in e0; inversion e0.
 Admitted.
 
-(** STOP HERE **)
+(* A (non-executable) implementation fulfilling only partial-correctness,
+   using a recursive approach *)
 
-    
-Fixpoint get' (n : nat) (ptr : Ptr) (i : nat) : WhileL nat := 
-  Read data ptr
-       (fun ptrVal => match n, ptrVal with
-                       | 0, Arr => Return (parray i)
-                       | Coq.Init.Datatypes.S n', Diff j v ptr' =>
-                         if beq_nat i j
-                         then Return v
-                         else get' n' ptr' i
-                       | _,=> Return (parray i) (* absurd *)
-                     end).
-
-Inductive pa_model' (s : heap) : Ptr -> (nat -> nat) -> nat -> Type :=
-  | pa_model_array' :
-     forall p, find s p = Some (dyn data Arr) -> pa_model' s p parray 0 
-  | pa_model_diff' :
-     forall p i v p', find s p = Some (dyn data (Diff i v p')) ->
-                 forall f n, pa_model' s p' f n ->
-                        pa_model' s p (upd f i v) (Coq.Init.Datatypes.S n).
-
-Definition getSpec' : nat -> Ptr -> nat -> WhileL nat.
-  intros n ptr i.
-  refine (Spec _).
-  refine (Predicate (fun s => { f : nat -> nat & pa_model' s ptr f n}) _).
-  intros s [f H] v.
-  refine (fun s' => prod (s = s') (v = f i)).
-Defined.
-
-Lemma getRefinement' : forall n ptr i, getSpec' n ptr i ⊑ get' n ptr i.
-Proof.
-  intros.
-  unfold getSpec', get'.
-  (* eapply readSpec. *)
-Admitted.
-
-
-(* A (non-executable) implementation fulfilling only partial-correctness *)
-
-Definition get (ptr : Ptr) (i : nat) : WhileL nat := 
-  Read data ptr
+Definition get' (ptr : Ptr) (i : nat) : WhileL data nat := 
+  Read ptr
        (fun ptrVal => match ptrVal with
-                       | Arr => Return (parray i)
+                       | Arr f => Return _ (f i)
                        | Diff j v ptr' =>
                          if beq_nat i j
-                         then Return v
+                         then Return _ v
                          else getSpec ptr' i
+                       | _ => Return _ 0 (* absurd *)
                      end).
 
-Lemma getRefinement : forall ptr i, getSpec ptr i ⊑ get ptr i.
+Lemma getRefinement' : forall ptr i, getSpec ptr i ⊑ get' ptr i.
 Proof.
   intros.
   READ ptr vInPtr.
   inversion X0; subst; simpl in *; eauto.
-  assert (Ha : forall (A : Type) (a b : A), Some a = Some b -> a = b) by
-      (intros A a b HInv; now inversion HInv).
-  assert (Ha1 : forall (A : Type) t1 t2, dyn A t1 = dyn A t2 -> t1 = t2) by
-      (intros A t1 t2 HInv; inversion HInv; now apply inj_pair2 in H0).
-  destruct vInPtr as [ | j v ptr' ]; simpl.
+  destruct vInPtr as [ | j v ptr' | | ]; simpl.
   (* Original persistent array *)
   - apply returnStep; unfold_refinements; refine_simpl.
     inversion X; subst; auto.
-    simpl in *.
-    rewrite e in H; apply Ha in H; apply Ha1 in H; inversion H.
+    rewrite e in H; inversion H; now subst.
+    rewrite e in H; inversion H.
   (* Single modification of other persistent array *)
   - destruct (eq_nat_dec i j).
     + subst.
@@ -826,31 +913,30 @@ Proof.
       apply returnStep; unfold_refinements; refine_simpl.
       inversion X.
       subst; simpl in *.
-      rewrite e in H; apply Ha in H; apply Ha1 in H; inversion H.
+      rewrite e in H; inversion H.
       subst; simpl in *.
       unfold upd.
-      rewrite e in H; apply Ha in H; apply Ha1 in H; inversion H.
+      rewrite H in e; inversion e; subst.
       subst; now rewrite <- beq_nat_refl.
     + rewrite <- PeanoNat.Nat.eqb_neq in n.
-      rewrite n.
-      unfold getSpec.
-      refine (Refinement _).
+      rewrite n; unfold getSpec, wrefines; simpl.
+      eapply (Refinement _ _ _).
       Unshelve. Focus 2.
-      refine_simpl; auto.
-      inversion X; simpl in *; subst.
-      rewrite e in H; apply Ha in H; apply Ha1 in H; inversion H.
-      rewrite e in H; apply Ha in H; apply Ha1 in H; inversion H.
-      subst.
-      exists f; auto.
+      unfold subset; simpl. 
+      intros s [[f H1] H2].
+      inversion H1; rewrite H in H2; inversion H2.
+      subst; clear H2.
+      now exists f0.
       refine_simpl.
-      admit. (* looks like it is related to X *)
-      inversion X0; simpl in *; subst.
-      clear X.
-      rewrite e in H; apply Ha in H; apply Ha1 in H; inversion H.
-      rewrite e in H; apply Ha in H; apply Ha1 in H; inversion H.
-      subst.
+      inversion X0; rewrite e in H; inversion H.
+      subst; clear H.
       unfold upd; rewrite n.
-      admit. (* looks like it is related to X *)
+      destruct X0. admit.
+      assert (Ha : find s p = Some (Diff i1 v p'0)). apply e0.
+      rewrite e in Ha; inversion Ha; subst; clear Ha; simpl in *.
+      admit. (* looks like we could prove this using X... *)
+  - RETURN 0; inversion X; rewrite e in H; inversion H.
+  - RETURN 0; inversion X; rewrite e in H; inversion H.
 Admitted.
 
 (* attempt at defining recursion *)
@@ -862,6 +948,7 @@ Inductive WhileL' (I : Type) (O : I -> Type) (a : Type) : Type :=
   | Call    : forall (i : I), (O i -> WhileL' O a) -> WhileL' O a
   | Return' : a -> WhileL' O a.
 
+(** STOP HERE **)
 
 (*
 Parameter N : nat.

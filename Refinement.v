@@ -136,15 +136,15 @@ Definition Is_false (b : bool) :=
     | false => True
   end.
 
-Definition WhilePT {a : Type} (inv : S -> Prop) (cond : S -> bool) (body : PT a) : PT a :=
+Definition WhilePT {a : Type} (inv : S -> Type) (cond : S -> bool) (body : PT a) : PT a :=
   let whilePre := (fun s =>   (* The invariant should hold initially *)
                              prod (inv s)
                               (* If we enter the loop, the precondition of the body should hold *)
-                            { H : (forall s, Is_true (cond s) /\ inv s -> pre body s) &
+                            { H : (forall s, prod (Is_true (cond s)) (inv s) -> pre body s) &
                               (* The loop body should preserve the invariant *)
-                            (forall s v s' (t : Is_true (cond s) /\ inv s), post body s (H s t) v s' -> inv s')})                          
+                            (forall s v s' (t : prod (Is_true (cond s)) (inv s)), post body s (H s t) v s' -> inv s')})                          
   in
-  let whilePost := (fun _ _ _ s' => inv s' /\ Is_false (cond s')) in
+  let whilePost := (fun _ _ _ s' => prod (inv s') (Is_false (cond s'))) in
   [ whilePre , whilePost ].
 
 Definition SeqPT {a b : Type} (pt1 : PT a) (pt2 : PT b) : PT b :=
