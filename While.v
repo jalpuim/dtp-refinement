@@ -288,6 +288,15 @@ Lemma changeSpec {a : Type} (pt2 pt1 : PT _ a) (w : WhileL a)
     exact (Refinement _ _ d h).
   Qed.
 
+Lemma step {a SPEC} (R : WhileL a) :
+  SPEC ⊑ R ->
+  { C : WhileL a & (R ⊑ C)} -> 
+  { C : WhileL a & (SPEC ⊑ C)}.
+Proof.
+  intros H1 [w H2].
+  exists w; eapply (refineTrans); eauto.
+Defined.
+  
 Definition refineIf {a} (cond : bool) (pt : PT _ a) :
   let branchPre (P : S v -> Prop) := fun s => prod (pre pt s) (P s) in
   let thenBranch := Predicate (branchPre (fun s => Is_true cond))
@@ -308,53 +317,6 @@ Proof.
   destruct pt.
 Admitted.
 
-(** While (loop) **)
-
-(* TODO how to include continuation? *)
-Lemma refineWhilePT {a} (inv : S v -> Type) (cond : S v -> bool) (Q : S v -> Type) : 
-  let pt := Predicate (inv) (fun s _ _ s' => prod (inv s) (Q s')) in
-  let body : PT _ a := Predicate (fun s => prod (inv s) (Is_true (cond s))) (fun _ _ _ s' => inv s') in
-  (forall s, prod (Is_false (cond s)) (inv s) -> Q s) ->
-  Refines pt (WhilePT inv cond body).
-  Proof.
-    intros pt body QH; simpl in *.
-    assert (d: subset (pre pt) (pre (WhilePT inv cond body))) by
-      (refine_simpl; repeat split; destruct_conjs; auto).
-    apply (Refinement _ _ d).
-    intros; repeat split; refine_simpl; destruct_conjs; now auto.
-  Qed.
-
-(*
-Lemma whileRefines {a : Type} (k : WhileL a) (body : WhileL unit) (w : PT _ a)
-      (cond : S v -> bool) (inv : S v -> Type)
-      (H1 : forall s, pre w s -> (if cond s
-                            then pre (semantics body) s
-                            else pre (semantics k) s) * inv s)
-      (H2 : forall s pre a s', Is_true (cond s) * inv s *
-                          post (semantics body) s pre a s' ->
-                          inv s)
-      (H3 : forall s, Is_false (cond s) * inv s -> pre (semantics k) s)
-      (* this is wrong – we want to referenced the "refined w" after
-         running the loop *)
-      (H4 : forall s pres pres' a s', post (semantics k) s pres a s' ->
-                                 post w s pres' a s') : 
-  Spec w ⊑ While inv cond body k.
-Proof.
-  destruct w.
-  unfold wrefines.
-  refine_simpl.
-  destruct (semantics k).
-  destruct (semantics body).
-  eapply (Refinement _ _).
-  Unshelve. Focus 2.
-  refine_simpl.
-  eapply H2.
-  apply H1 in X.
-  destruct (cond s).
-  repeat split.
-  now destruct X.
-Admitted. *)
-  
 (* Refine split at PT level *)
 Lemma refineSplitPT {a : Type} (w2 w4 : PT _ a) (w1 w3 : PT _ unit) :
   Spec w1 ⊑ Spec w3 ->
@@ -368,6 +330,39 @@ Proof.
   refine_simpl; eauto.
   refine_simpl; eauto.
 Qed.
+
+Lemma refineSeqSkipR_PT (spec1 spec2 : PT v unit) :
+  let skip := Predicate (fun s => True) (fun s _ v s' => s = s' /\ v = tt) in
+  Refines spec1 spec2 ->
+  Refines spec1 (SeqPT spec2 skip).
+Proof.
+  intros.
+  destruct spec1, spec2.
+  eapply (Refinement _ _ _).
+  Unshelve. Focus 2.
+  destruct X.
+  refine_simpl.
+  exists (d s0 X).
+  auto.
+  destruct X.
+  refine_simpl.
+  apply s.
+  now induction X0.
+Qed.
+    
+  
+Lemma refineSeqSkipR (spec : PT v unit) (w : WhileL unit):
+  let skip := fun _ => Return tt in
+  Spec spec ⊑ w ->
+  Spec spec ⊑ (bind w skip).
+Proof.
+  intros.
+  unfold wrefines.
+  destruct X.
+  refine_simpl.
+  destruct (semantics w).
+  destruct spec.
+Admitted.
 
 (* Refine split at WhileL level. Unfortunately it's tricky to prove. *)
 (*
@@ -384,6 +379,8 @@ Proof.
   refine_simpl.
 Admitted.
 *)
+
+(** While (loop) **)
 
 (* Splitting a while loop and its continuation *)
 Lemma refineWhileFork {a : Type} (w k : WhileL a) (body : WhileL unit)
@@ -430,8 +427,84 @@ Proof.
   destruct (semantics k).
   refine_simpl.
   eauto.  
-Qed.   
-  
+Qed.
+
+(* TODO how to include continuation? *)
+Lemma refineWhilePT  (inv : S v -> Type) (cond : S v -> bool) (Q : S v -> Type) : 
+  let pt := Predicate (inv) (fun _ _ _ s' => prod (inv s') (Q s')) in
+  let body : PT _ unit := Predicate (fun s => prod (inv s) (Is_true (cond s)))
+                                   (fun _ _ _ s' => inv s') in
+  (forall s, prod (Is_false (cond s)) (inv s) -> Q s) ->
+  Refines pt (WhilePT inv cond body).
+  Proof.
+    intros pt body QH; simpl in *.
+    assert (d: subset (pre pt) (pre (WhilePT inv cond body))) by
+      (refine_simpl; repeat split; destruct_conjs; auto).
+    apply (Refinement _ _ d).
+    intros; repeat split; refine_simpl; destruct_conjs; now auto.
+  Qed.
+
+Lemma refineWhile' (inv : S v -> Type) (cond : S v -> bool) (Q : S v -> Type) 
+  (StrQ : forall s, prod (Is_false (cond s)) (inv s) -> Q s) : 
+  let w := Spec (Predicate inv (fun _ _ _ s' => prod (inv s') (Q s'))) in
+  let body := Predicate (fun s => prod (inv s) (Is_true (cond s)))
+                       (fun _ _ _ s => inv s) in
+  w ⊑ While inv cond (Spec body) (Return tt).
+Proof.
+  unfold "⊑",semantics.
+  apply refineSeqSkipR_PT. 
+  now apply refineWhilePT.
+Qed.
+
+Definition refineBody (inv : S v -> Type) (cond : S v -> bool)
+           (bodyL bodyR : WhileL unit) : 
+  bodyL ⊑ bodyR ->
+  While inv cond bodyL (Return tt) ⊑ While inv cond bodyR (Return tt).
+Proof.
+  intro H.
+  assert (d: subset (pre (semantics (While inv cond bodyL (Return tt))))
+                    (pre (semantics (While inv cond bodyR (Return tt))))).
+  unfold subset. refine_simpl; auto.
+  inversion H as [Pre Post].
+  set (E := fun s' H => Pre s' (s0 s' H)).
+  exists E.
+  intros s1 v' s' P Q.
+  eapply X.
+  apply Post.
+  unfold E in Q.
+  exact Q.
+
+  apply (Refinement _ _ d).
+  intros.
+  unfold post,pre,subset in *.
+  simpl in *.
+  intros; assumption.
+Defined.
+
+Lemma stepBody {inv cond bodyL} :
+  { c : WhileL unit & bodyL ⊑ c } -> 
+  { c : WhileL unit & While inv cond bodyL (Return tt) ⊑ c }.  
+Proof.
+  intros [c H].
+  exists (While inv cond c (Return tt)).
+  refine_simpl.
+  apply refineBody with (inv := inv) (cond := cond) in H; assumption.
+Defined.
+
+Lemma stepWhile {Q} (inv : S v -> Type) (cond : S v -> bool) :
+  let spec := Predicate (fun s => inv s) (fun _ _ _ s' => prod (inv s') (Q s')) in
+  let body := Predicate (fun s => prod (inv s) (Is_true (cond s)))
+                       (fun _ _ (_ : unit) s => inv s) in
+  (forall s, prod (Is_false (cond s)) (inv s) -> Q s) ->
+  {w : WhileL unit & Spec body ⊑ w} -> 
+  {w : WhileL unit & Spec spec ⊑ w}.
+Proof.
+  intros pt body H1 [c H].
+  apply step with (R := While inv cond (Spec body) (Return tt)).
+  apply refineWhile'. assumption.
+  apply stepBody.
+  eauto.
+Defined.  
   
 End WHILE.
 
@@ -791,29 +864,6 @@ Defined.
 Hint Constructors pa_model.
 Hint Resolve pa_model_alloc pa_model_sep.
 
-Lemma refineSkipPT :
-  forall (w1 w2 : PT data unit),
-    Refines w1 w2 -> 
-    Refines w1 (SeqPT w2 (Predicate (fun _ => True)
-                                    (fun s _ v s' => s = s' /\ v = tt))).
-Proof.
-  intros.
-  destruct X.
-  destruct w1, w2.
-  refine_simpl.
-  eapply (Refinement _ _ _).
-  Unshelve. Focus 2.
-  refine_simpl; eauto.
-  refine_simpl.
-  assert (Ha : X0 = tt) by now induction X0.
-  subst.
-  Unshelve. Focus 2.
-  apply d.
-  apply X.
-  apply s.
-  apply X1.
-Qed.  
-
 (* get (using a loop) refinement *)
 Lemma getRefinement :  forall ptr i, wrefines (getSpec ptr i) (get ptr i).
 Proof.
@@ -846,24 +896,37 @@ Proof.
                                       (x = f i)} })
                     (fun s pres v s' => v = (projT1 pres) i)).
   eapply refineWhile with (w1 := w1) (w2 := w2).
-  - destruct w1, w2.
-    refine_simpl.
+  - unfold w1, w2.
     eapply (Refinement _ _ _).
     Unshelve. Focus 2.
-    refine_simpl.
-    admit.
-    refine_simpl.
-    admit.
-  - unfold wrefines.
     simpl.
-    apply refineSkipPT.
+    unfold subset; intros.
+    exists X.
+    intros; eauto.
+    unfold subset; intros.
+    simpl in *.
+    destruct x, p.
+    simpl in *.
+    destruct s1.
+    simpl in *.
+    destruct p0.
+    simpl in *.
+    destruct p0.
+    simpl in *.
+    destruct s1.
+    destruct X, s1, s1, x4.
+    now simpl in *.
+  - Check refineWhilePT.
     eapply refineWhilePT with
-    (*
-    (cond := fun s => negb (data_get_eqb_some (find s done)))
-    (inv := (fun s : S data => {f : nat -> nat & pa_model s t f})) *)
+    (* inv := (fun s : S data => {f : nat -> nat & pa_model s t f}) *)
+    (cond := (fun s : S data => negb (data_get_eqb_some (find s done))))
     (Q := fun s => prod (Is_false (negb (data_get_eqb_some (find s done))))
                       ({ f : nat -> nat & pa_model s t f })).
-    admit.
+    unfold w1.
+    intros.
+    destruct X.
+    split; auto.
+    admit. (* this should be the invariant... *)
     admit.
     admit.
   - READ done vInDone.
