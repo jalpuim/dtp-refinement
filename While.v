@@ -269,6 +269,37 @@ Lemma changeSpec {a : Type} (pt2 pt1 : PT _ a) (w : WhileL a)
 
 (** While (loop) **)
 
+Lemma whileRefines {a : Type} (I : S v -> Type) (c : S v -> bool) (body : WhileL unit) (w k : WhileL a)
+  (d : subset (pre (semantics w)) (pre (semantics (While I c body k))))
+  (h : forall (s : S v)(p : pre (semantics w) s) (x : a) (s' : S v), 
+    post (semantics (While I c body k)) s (d s p) x s' -> post (semantics w) s p x s')
+  : w ⊑ While I c body k.
+  Proof.
+    exact (Refinement _ _ d h).
+  Qed.
+
+
+Lemma whileSpec {a : Type} (I : S v -> Type) (c : S v -> bool) (spec : PT _ a) (k : WhileL a) (body : WhileL unit)
+  (d : forall s, pre spec s -> I s)
+  (refineBody : Spec (Predicate (fun s => prod (I s) (Is_true (c s))) (fun s pres _ s' => I s')) ⊑ body)
+  (refineRest : Spec (Predicate (fun s => {t : S v & prod (pre spec t) (
+                                                     prod (I s) (
+                                                          (Is_false (c s))
+                                          ))})
+                                (fun s pres x s' => post spec (projT1 pres) (fst (projT2 pres)) x s')
+                     ) 
+                ⊑ k )
+  :
+  Spec spec ⊑ While I c body k.
+  Proof.
+    unshelve econstructor; destruct spec as [pre post]; destruct refineRest as [d1 h1]; destruct refineBody as [d2 h2]; refine_simpl.
+    * now eauto.
+    * unshelve econstructor; refine_simpl; [ now apply d2 | eapply h2; eassumption].
+    * refine_simpl; eapply d1; unshelve econstructor; [exact s | now eauto].
+    * refine_simpl. unshelve refine (h1 X (existT _ s ( x , _)) _ _ _); [now eauto | eassumption ].
+   Qed.
+
+
 (* TODO how to include continuation? *)
 Lemma refineWhilePT {a} (inv : S v -> Type) (cond : S v -> bool) (Q : S v -> Type) : 
   let pt := Predicate (inv) (fun s _ _ s' => prod (inv s) (Q s')) in
