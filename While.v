@@ -285,6 +285,10 @@ Lemma whileSpec {a : Type} (I : S v -> Type) (c : S v -> bool) (spec : PT _ a) (
   (refineRest : Spec (Predicate (fun s => {t : S v & prod (pre spec t) (
                                                      prod (I s) (
                                                           (Is_false (c s))
+                                          (* This states that there is some initial state t that satisfies the precondition of spec
+                                             such that we can go from t to a new state s (after having run through the loop) 
+                                             Question: should s and t be related somehow?
+                                           *)
                                           ))})
                                 (fun s pres x s' => post spec (projT1 pres) (fst (projT2 pres)) x s')
                      ) 
