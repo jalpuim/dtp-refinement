@@ -1,3 +1,15 @@
+Require Import EqNat.
+Require Import Bool.
+Require Import String.
+Require Import Arith.Bool_nat.
+Require Import Coq.Arith.PeanoNat.
+Require Import Div2.
+Require Import While.
+Require Import Heap.
+Require Import Refinement.
+Require Import Program.Tactics.
+Require Import Program.Equality.
+
 (* Attempt following "A Persistent Union-Find Data Structure" *)
 
 Set Implicit Arguments.
@@ -299,57 +311,67 @@ Proof.
   destruct_conjs; subst.
   exists X; repeat split; eauto.
   admit. (* this should be provable using heap lemmas *)
-  (* trying to split the proof *)
-  set (w1 := Predicate (fun s : S data =>
-       {t0 : S data &
-       ({t1 : S data &
-        {f : nat -> nat & pa_model t1 ptr f} * (find t1 ptr = Some vInPtr) *
-        ((forall (p' : M.key) (x : data), find t1 p' = Some x -> p' <> t) *
-         (t0 = update t1 t vInPtr))} *
-        ((forall (p' : M.key) (x : data), find t0 p' = Some x -> p' <> done) *
-         (s = update t0 done (ResultGet None))))%type})
-                    (fun s pres v s' =>
-                       { x : nat & prod (find s' done = Some (ResultGet (Some x)))
-                                      (x = projT1 (fst (fst (projT2 (fst (projT2 pres))))) i)}) : PT data unit).  
-  set (w2 := Predicate (fun s =>
-                       { f : nat -> nat &
-                       { x : nat & prod (find s done = Some (ResultGet (Some x)))
-                                      (x = f i)} })
-                    (fun s pres v s' => v = (projT1 pres) i)).
-  eapply refineWhile with (w1 := w1) (w2 := w2).
-  - destruct w1, w2.
-    refine_simpl.
-    eapply (Refinement _ _ _).
-    Unshelve. Focus 2.
-    refine_simpl.
-    admit.
-    refine_simpl.
-    admit.
-  - unfold wrefines.
-    simpl.
-    apply refineSkipPT.
-    eapply refineWhilePT with
-    (*
-    (cond := fun s => negb (data_get_eqb_some (find s done)))
-    (inv := (fun s : S data => {f : nat -> nat & pa_model s t f})) *)
-    (Q := fun s => prod (Is_false (negb (data_get_eqb_some (find s done))))
-                      ({ f : nat -> nat & pa_model s t f })).
-    admit.
-    admit.
-    admit.
-  - READ done vInDone.
-    destruct vInDone.
-    RETURN 0.
-    rewrite e in e0; inversion e0.
-    RETURN 0.
-    rewrite e in e0; inversion e0.
-    destruct o.
-    RETURN n.
-    now rewrite e in e0; inversion e0.
-    RETURN 0.
-    rewrite e in e0; inversion e0.
-    RETURN 0.
-    rewrite e in e0; inversion e0.
+  apply whileSpec.
+  refine_simpl.
+  inversion X0; subst.
+  rewrite e1 in H; inversion H; subst; clear H.
+  eexists.
+  apply pa_model_array.
+  rewrite findNUpdate.
+  rewrite findUpdate.
+  reflexivity.
+  apply n with (x := (Arr s1)).
+  now rewrite findUpdate.
+  rewrite e1 in H; inversion H; subst; clear H.
+  eexists.
+  eapply pa_model_diff.
+  rewrite findNUpdate.
+  rewrite findUpdate.
+  reflexivity.
+  eapply n.
+  now rewrite findUpdate.
+  apply pa_model_sep'.
+  admit.
+  apply pa_model_sep'.
+  admit.
+  apply X.
+  READ t vInT.
+  admit.
+  destruct vInT.
+  WRITE done (ResultGet (Some (n i))).
+  admit.
+  RETURN tt.
+  admit.
+  destruct (Nat.eq_dec i n).
+  subst.
+  rewrite PeanoNat.Nat.eqb_refl.
+  WRITE done (ResultGet (Some n0)).
+  admit.
+  RETURN tt.
+  admit.
+  apply Nat.eqb_neq in n1.
+  rewrite n1.
+  READ p vInT'.
+  admit.
+  WRITE t vInT'.
+  RETURN tt.
+  admit.
+  RETURN tt.
+  RETURN tt.
+  READ done vInDone.
+  admit.
+  destruct vInDone.
+  RETURN 0.
+  admit.
+  RETURN 0.
+  admit.
+  destruct o.
+  RETURN n.
+  admit.
+  RETURN 0.
+  admit.
+  RETURN 0.
+  admit.
 Admitted.
 
 (* A (non-executable) implementation fulfilling only partial-correctness,
