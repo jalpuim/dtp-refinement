@@ -150,6 +150,31 @@ Proof.
     rewrite H in e; inversion e.
 Qed.
 
+Inductive PAData : option data -> Prop :=
+  | PAArr : forall f, PAData (Some (Arr f))
+  | PADiff : forall f i v, PAData (Some (Diff f i v)).
+
+Hint Constructors PAData.
+
+(* Main separation lemma *)
+Lemma pa_model_sep_padata :
+  forall s t f v t',
+    ~ (PAData (find s t')) ->
+    pa_model s t f -> pa_model (update s t' v) t f.
+Proof.
+  intros.
+  intros; generalize dependent t'.
+  induction X; intros.
+  - apply pa_model_array.
+    rewrite findNUpdate1 with (x := Some ((Arr f))); auto.
+    unfold not; intros; subst.
+    rewrite e in H; auto.
+  - apply pa_model_diff with (p' := p'); auto.
+    apply findNUpdate1; auto.
+    unfold not; intros; subst.
+    rewrite e in H; auto.
+Qed.
+
 Lemma pa_model_alloc :
   forall s t' f v, pa_model s t' f -> pa_model (update s (alloc s) v) t' f.
 Proof.
@@ -218,6 +243,19 @@ Definition data_get_eqb_some (h : option data) : bool :=
     | _ => false
   end.
 
+Lemma get_eqb_dec :
+  forall d, sumbool (data_get_eqb_some d = true) (data_get_eqb_some d = false).
+Proof.
+  intros d; destruct d; unfold data_get_eqb_some; simpl; auto.
+  destruct d; auto; destruct o; auto.
+Qed.
+
+Definition isSome (h : option data) : bool :=
+  match h with
+    | Some _ => true
+    | None => false
+  end.
+
 (*
 Definition get (ptr : Ptr) : WhileL unit :=
   t <- ptr
@@ -237,7 +275,8 @@ refine (
   Read ptr (fun vInPtr =>
   New vInPtr (fun t =>
   New (ResultGet None) (fun done =>
-  While (fun s => { f : nat -> nat & pa_model s t f })
+  While (fun s => prod ({ f : nat -> nat & pa_model s t f })
+                  (prod (t <> done) ({ x : option nat & find s done = Some (ResultGet x) })))
         (fun s => negb (data_get_eqb_some (find s done)))
         (Read t (fun vInT => _ )) (* the body is refined below *)
         (Read done (fun vInDone =>
@@ -297,81 +336,103 @@ Proof.
   apply X1.
 Qed.  
 
+
 (* get (using a loop) refinement *)
 Lemma getRefinement :  forall ptr i, wrefines (getSpec ptr i) (get ptr i).
 Proof.
   intros.
   unfold get.
-  (* READ *)
   READ ptr vInPtr.
   inversion X0; subst; eauto.
-  (* NEW *)
   NEW vInPtr t.
+  (* NEW (ResultGet None) done. *)
   apply newSpec; [ | intros done]; simpl; intros. (* ; goal_simpl. *)
-  destruct_conjs; subst.
-  exists X; repeat split; eauto.
-  admit. (* this should be provable using heap lemmas *)
-  apply whileSpec.
-  refine_simpl.
-  inversion X0; subst.
-  rewrite e1 in H; inversion H; subst; clear H.
-  eexists.
-  apply pa_model_array.
+  destruct_conjs.
+  exists (update s (alloc s) (ResultGet None)).
+  subst. repeat split.
+  exists s0.
+  admit.
   rewrite findNUpdate.
-  rewrite findUpdate.
-  reflexivity.
-  apply n with (x := (Arr s1)).
-  now rewrite findUpdate.
-  rewrite e1 in H; inversion H; subst; clear H.
-  eexists.
-  eapply pa_model_diff.
   rewrite findNUpdate.
-  rewrite findUpdate.
-  reflexivity.
+  auto.
   eapply n.
-  now rewrite findUpdate.
-  apply pa_model_sep'.
-  admit.
-  apply pa_model_sep'.
-  admit.
-  apply X.
-  READ t vInT.
-  admit.
-  destruct vInT.
-  WRITE done (ResultGet (Some (n i))).
-  admit.
-  RETURN tt.
-  admit.
-  destruct (Nat.eq_dec i n).
-  subst.
-  rewrite PeanoNat.Nat.eqb_refl.
-  WRITE done (ResultGet (Some n0)).
-  admit.
-  RETURN tt.
-  admit.
-  apply Nat.eqb_neq in n1.
-  rewrite n1.
-  READ p vInT'.
-  admit.
-  WRITE t vInT'.
-  RETURN tt.
-  admit.
-  RETURN tt.
-  RETURN tt.
-  READ done vInDone.
-  admit.
-  destruct vInDone.
-  RETURN 0.
-  admit.
-  RETURN 0.
-  admit.
-  destruct o.
-  RETURN n.
-  admit.
-  RETURN 0.
-  admit.
-  RETURN 0.
-  admit.
+  eassumption.
+  admit. (* heap lemma? *)
+  intros.
+  eapply n.
+  admit. (* heap lemma? *)
+  admit. (* heap lemma? *)
+  apply whileSpec.
+  - refine_simpl.
+    inversion X0; subst.
+    rewrite e1 in H; inversion H; subst; clear H.
+    eexists.
+    apply pa_model_array.
+    rewrite findNUpdate.
+    rewrite findUpdate.
+    reflexivity.
+    apply n with (x := (Arr s1)).
+    now rewrite findUpdate.
+    rewrite e1 in H; inversion H; subst; clear H.
+    eexists.
+    eapply pa_model_diff.
+    rewrite findNUpdate.
+    rewrite findUpdate.
+    reflexivity.
+    eapply n.
+    now rewrite findUpdate.
+    apply pa_model_sep'.
+    admit. (* do we need to re-formulate newSpec? *)
+    apply pa_model_sep'.
+    admit. (* do we need to re-formulate newSpec? *)
+    apply X.
+    eapply n; now rewrite findUpdate.
+    eauto.
+  - READ t vInT.
+    inversion X0; subst; eauto.
+    destruct vInT.
+    WRITE done (ResultGet (Some (n i))).
+    RETURN tt.
+    destruct (Nat.eq_dec i n).
+    subst.
+    rewrite PeanoNat.Nat.eqb_refl.
+    WRITE done (ResultGet (Some n0)).
+    RETURN tt.
+    inversion X0; subst; rewrite e0 in H; inversion H; subst; clear H.
+    exists (upd f i0 v).
+    apply pa_model_diff with (p' := p').
+    rewrite findNUpdate. apply e0. auto.
+    apply pa_model_sep_padata; auto.
+    unfold not; intros H; rewrite X in H; inversion H.
+    apply Nat.eqb_neq in n1.
+    rewrite n1.
+    READ p vInT'.
+    inversion X0; subst; rewrite e in H; inversion H; subst; clear H.
+    inversion X1; eauto.
+    WRITE t vInT'.
+    RETURN tt.
+    inversion X0; subst; rewrite e1 in H; inversion H; subst; clear H.
+    inversion X1; subst; rewrite e0 in H; inversion H; subst; clear H.
+    eauto.
+    exists (upd f0 i2 v0).
+    eapply pa_model_diff.
+    now rewrite findUpdate.
+    admit. (* seems to follow from X2, if t <> p'0 *)
+    RETURN tt.
+    RETURN tt.
+  - READ done vInDone.
+    destruct vInDone.
+    RETURN 0.
+    rewrite X in i0; inversion i0.
+    RETURN 0.
+    rewrite X in i0; inversion i0.
+    destruct o.
+    RETURN n.
+    admit.
+    RETURN 0.
+    rewrite X in i0; inversion i0.
+    RETURN 0.
+    rewrite X in i0; inversion i0.
 Admitted.
 
 (* A (non-executable) implementation fulfilling only partial-correctness,
