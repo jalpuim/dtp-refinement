@@ -180,10 +180,29 @@ Lemma pa_model_alloc :
 Proof.
   intros; apply pa_model_sep; auto; apply allocNotIn.
 Qed.
+  
+(* decidability of find *)
 
-(* Tactics copied from While Section. To be removed later. *)
+Lemma find_eqdec : forall {A} s p, sumbool (find s p = None) (exists (c : A), find s p = Some c).
+Proof. intros; destruct (find s p); eauto. Qed.
 
-
+Lemma pa_model_copy :
+  forall s p f, pa_model s p f -> forall v, find s p = Some v -> 
+           forall t, (forall (p' : M.key) (x : data), find s p' = Some x -> p' <> t) ->
+                pa_model (update s t v) t f.
+Proof.
+  intros s p f H1.
+  induction H1; intros.
+  - rewrite e in H; inversion H; subst.
+    intros; apply pa_model_array; auto.
+  - rewrite e in H; inversion H; subst.
+    intros; eapply pa_model_diff with (p' := p'); auto.
+    apply pa_model_sep'; auto.
+    destruct (find_eqdec s t); auto.
+    destruct e0; apply H0 in H2; exfalso; auto.    
+Qed.
+  
+  
 (** set refinement **)
 
 Lemma setRefinement : forall ptr i v, wrefines (setSpec ptr i v) (set ptr i v).
@@ -216,18 +235,19 @@ Proof.
     now apply pa_model_alloc.
     RETURN res.
     apply pa_model_diff with (p' := ptr); auto.
-    apply someIn in e0; apply pa_model_sep; auto.
-    (* TODO Maybe change pa_model_sep to use find instead of M.In? *)
-    unfold not; intros H. eapply n with (p' := res); auto.
-    admit.
-    apply someIn in e0; apply pa_model_sep; auto.
-    unfold not; intros H. eapply n with (p' := res); auto.
-    admit.
+    apply someIn in e0; apply pa_model_sep'; auto.
+    destruct (find_eqdec pre res); auto.
+    destruct e; exfalso; eapply n; eauto.
+    apply someIn in e0; apply pa_model_sep'; auto.
+    destruct (find_eqdec pre res); auto.
+    destruct e; exfalso; eapply n; eauto.
   - RETURN ptr.
     inversion X; subst; rewrite H in e; inversion e.
+    auto.
   - RETURN ptr.
     inversion X; subst; rewrite H in e; inversion e.
-Admitted.
+    auto.
+Qed.
 
 (*** GET ***)
 (* The adapted spec from Ch.4 *)
@@ -255,6 +275,7 @@ Definition isSome (h : option data) : bool :=
     | Some _ => true
     | None => false
   end.
+
 
 (*
 Definition get (ptr : Ptr) : WhileL unit :=
@@ -313,55 +334,765 @@ Defined.
 Hint Constructors pa_model.
 Hint Resolve pa_model_alloc pa_model_sep.
 
-Lemma refineSkipPT :
-  forall (w1 w2 : PT data unit),
-    Refines w1 w2 -> 
-    Refines w1 (SeqPT w2 (Predicate (fun _ => True)
-                                    (fun s _ v s' => s = s' /\ v = tt))).
+
+
+(* STARTS HERE: new get *)
+
+Inductive dist (s : heap data) : Ptr -> list Ptr -> Type :=
+  | dist_sing : forall p f, find s p = Some (Arr f) -> dist s p (p :: nil)
+  | dist_cons : forall p p' i v l, 
+                find s p = Some (Diff i v p') -> 
+                dist s p' l -> dist s p (p :: l). 
+
+Hint Constructors dist.
+Hint Unfold List.In.
+
+Inductive InT (p : Ptr) : list Ptr -> Type := 
+  | here : forall l, InT p (p :: l)
+  | there : forall p' l, InT p l -> InT p (p' :: l).
+
+Hint Constructors InT.
+
+Lemma InT_to_In : forall p l, InT p l -> In p l.
+Proof. intros. induction l. inversion H. inversion H; subst; auto. right; auto. Qed.
+  
+Lemma dist_fun : forall s ptr l1, dist s ptr l1 -> forall l2, dist s ptr l2 -> l1 = l2.
+Proof.
+  intros s ptr l1 H.
+  induction H; intros.
+  - inversion X; subst; auto.
+    rewrite e in H; inversion H.
+  - inversion X; subst; rewrite e in H0; inversion H0; subst.
+    apply f_equal; auto.
+Qed.
+
+Lemma dist_In : forall s ptr l, dist s ptr l -> List.In ptr l.
+Proof. intros; induction X; auto. Qed.
+
+Lemma dist_InT : forall s ptr l, dist s ptr l -> InT ptr l.
+Proof. intros; induction X; auto. Qed.
+
+Lemma dist_sep : forall s ptr l, dist s ptr l -> forall ptr', ~ List.In ptr' l -> forall v, dist (update s ptr' v) ptr l.
+Proof.
+  intros s ptr l H.
+  induction H; intros.
+  - simpl; apply dist_sing with (f := f); rewrite findNUpdate; auto.
+  - eapply dist_cons.
+    erewrite findNUpdate; eauto 5.
+    apply IHdist; unfold not; intros HH; apply H0; now right.
+Qed.
+
+
+Lemma dist_sepT : forall s ptr l, dist s ptr l -> forall ptr', (InT ptr' l -> False) -> forall v, dist (update s ptr' v) ptr l.
+Proof.
+  intros s ptr l H.
+  induction H; intros.
+  - simpl; apply dist_sing with (f := f); rewrite findNUpdate; auto.
+    unfold not; intros HH; subst.
+    apply H; auto.
+  - eapply dist_cons.
+    erewrite findNUpdate; eauto 2.
+    unfold not; intros HH; subst.
+    apply H0; auto.
+    apply IHdist; unfold not; intros HH; apply H0; now right.
+Qed.
+
+Lemma dist_sep2 : forall s ptr ptr' l v, dist (update s ptr' v) ptr l -> ~ List.In ptr' l -> dist s ptr l.
+Proof.
+  intros s ptr ptr' l v H.
+  dependent induction H; intros.
+  - eapply dist_sing.
+    erewrite <- findNUpdate.
+    eapply e.
+    auto.
+  - eapply dist_cons.
+    erewrite <- findNUpdate; eauto 5.
+    apply IHdist; unfold not; intros HH; apply H0; now right.
+Qed. 
+    
+
+Lemma pa_model_dist : forall s ptr f, pa_model s ptr f -> { l : list Ptr & dist s ptr l }.
+Proof. intros; induction X; eauto. destruct IHX; eauto. Qed.
+
+Lemma pa_model_sep_ugly :
+  forall s f v ptr ptr' l,
+    pa_model s ptr f ->
+    dist s ptr l ->
+    ~ List.In ptr' l ->
+    pa_model (update s ptr' v) ptr f.
+Proof.
+  intros s f v ptr ptr' l HPA Hdist. generalize dependent ptr'. generalize dependent v. generalize dependent l.
+  induction HPA; intros.
+  - apply pa_model_array.
+    rewrite findNUpdate; auto.
+    unfold not; intros; subst.
+    apply dist_In in Hdist.
+    contradiction.
+  - apply pa_model_diff with (p' := p').
+    rewrite findNUpdate; auto.
+    unfold not; intros; subst.
+    apply dist_In in Hdist; contradiction.
+    inversion Hdist; subst; rewrite e in H0; inversion H0; subst.    
+    eapply IHHPA with (l := l0); auto.
+Qed.
+
+Lemma pa_model_sep_uglyT :
+  forall s f v ptr ptr' l,
+    pa_model s ptr f ->
+    dist s ptr l ->
+    (InT ptr' l -> False) ->
+    pa_model (update s ptr' v) ptr f.
+Proof.
+  intros s f v ptr ptr' l HPA Hdist. generalize dependent ptr'. generalize dependent v. generalize dependent l.
+  induction HPA; intros.
+  - apply pa_model_array.
+    rewrite findNUpdate; auto.
+    unfold not; intros; subst.
+    apply dist_InT in Hdist.
+    contradiction.
+  - apply pa_model_diff with (p' := p').
+    rewrite findNUpdate; auto.
+    unfold not; intros; subst.
+    apply dist_InT in Hdist; contradiction.
+    inversion Hdist; subst; rewrite e in H0; inversion H0; subst.    
+    eapply IHHPA with (l := l0); auto.
+Qed.
+
+Lemma pa_model_sep_ugly2 :
+  forall s f v ptr ptr' l,
+    pa_model s ptr f ->
+    dist s ptr l ->
+    ~ List.In ptr' l ->
+    find s ptr = Some v -> 
+    pa_model (update s ptr' v) ptr' f.
+Proof.
+  intros s f v ptr ptr' l HPA Hdist HFind. generalize dependent ptr'. generalize dependent v. generalize dependent l.
+  induction HPA; intros.
+  - apply pa_model_array; rewrite e in H; now rewrite findUpdate.
+  - rewrite e in H.
+    apply pa_model_diff with (p' := p'). 
+    rewrite findUpdate; auto.
+    assert (Ha : pa_model s p' f) by assumption.
+    apply pa_model_dist in HPA.
+    destruct HPA.
+    eapply pa_model_sep_ugly. auto.
+    apply d.
+    assert (Ha1 : l = p :: x).
+    inversion Hdist; subst; rewrite e in H0; inversion H0; subst.
+    apply f_equal.
+    eapply dist_fun; eauto.
+    subst.
+    unfold not; intros; apply HFind.
+    now right.
+Qed.
+
+Lemma pa_model_sep_ugly2T :
+  forall s f v ptr ptr' l,
+    pa_model s ptr f ->
+    dist s ptr l ->
+    (InT ptr' l -> False) -> 
+    find s ptr = Some v -> 
+    pa_model (update s ptr' v) ptr' f.
+Proof.
+  intros s f v ptr ptr' l HPA Hdist HFind. generalize dependent ptr'. generalize dependent v. generalize dependent l.
+  induction HPA; intros.
+  - apply pa_model_array; rewrite e in H; now rewrite findUpdate.
+  - rewrite e in H.
+    apply pa_model_diff with (p' := p'). 
+    rewrite findUpdate; auto.
+    assert (Ha : pa_model s p' f) by assumption.
+    apply pa_model_dist in HPA.
+    destruct HPA.
+    eapply pa_model_sep_uglyT. auto.
+    apply d.
+    assert (Ha1 : l = p :: x).
+    inversion Hdist; subst; rewrite e in H0; inversion H0; subst.
+    apply f_equal.
+    eapply dist_fun; eauto.
+    subst.
+    unfold not; intros; apply HFind.
+    auto.
+Qed.
+
+Lemma bar : forall s p1 l, dist s p1 l -> forall p2, p1 <> p2 -> InT p2 l -> { l' : list Ptr & prod (dist s p2 l') (length l' < length l) }.
+Proof.
+  intros s p1 l Hdist p2 Heq HIn.
+  destruct (M.E.eq_dec p1 p2).
+  contradiction.
+  induction Hdist; intros.
+  - inversion HIn; subst; exfalso; now apply n.
+  - inversion HIn; subst.
+    exfalso; now apply n.
+    destruct (M.E.eq_dec p' p2); subst; eauto.
+    assert ({l' : list Ptr & (dist s p2 l' * (Datatypes.length l' < Datatypes.length l))%type}).
+    apply IHHdist; auto.
+    destruct X.
+    exists x.
+    destruct p0; split; auto.
+    simpl.
+    now apply Nat.lt_lt_succ_r.
+Qed.
+
+Lemma cons_contra : forall {A} (x : A) l, l <> x :: l.
 Proof.
   intros.
-  destruct X.
-  destruct w1, w2.
-  refine_simpl.
-  eapply (Refinement _ _ _).
-  Unshelve. Focus 2.
-  refine_simpl; eauto.
-  refine_simpl.
-  assert (Ha : X0 = tt) by now induction X0.
+  induction l.
+  - unfold not; intros HInv; inversion HInv.
+  - unfold not; intros HInv; inversion HInv; contradiction.
+Qed.
+    
+Lemma foo : forall s p l, dist s p (p :: l) -> (InT p l -> False).
+Proof.
+  intros s p l H.
+  dependent induction H.
+  - unfold not; intros HInv; inversion HInv; subst.
+  - unfold not; intros HH; subst.
+    destruct (M.E.eq_dec p' p).
+    subst.
+    assert (Ha : l = p :: l).
+    eapply dist_fun; eauto.
+    eapply cons_contra; apply Ha. 
+    assert (Ha : dist s p (p :: l)) by eauto.
+    destruct (bar H n HH).
+    destruct p0.
+    assert (Ha1 : x = p :: l).
+    eapply dist_fun; eauto.
+    subst.
+    simpl in l0.
+    eapply Nat.nlt_succ_diag_l; apply l0.
+Qed.
+  
+Lemma pa_model_desc : forall s p1 f i v, pa_model s p1 (upd f i v) ->
+                                    forall p2 v', pa_model s p2 f -> find s p1 = Some (Diff i v p2) -> find s p2 = Some v' ->
+                                             pa_model (update s p1 v') p1 f.
+Proof.
+  intros s p1 f i v HP1 p2 v' HP2 HFind1 HFind2.
+  assert (Ha : pa_model s p2 f) by assumption.
+  apply pa_model_dist in HP2.
+  destruct HP2.
+  eapply pa_model_sep_ugly2T; eauto.
+
+  assert (Ha1 : pa_model s p1 (upd f i v)) by assumption.
+  apply pa_model_dist in HP1.
+  destruct HP1.
+  assert (Ha2 : x0 = p1 :: x).
+  inversion d0; subst.
+  inversion d0; subst.
+  rewrite H0 in HFind1; inversion HFind1.
+  inversion X.
+  rewrite H in HFind1; inversion HFind1; subst.
+  apply f_equal.
+  eapply dist_fun; eauto.
   subst.
-  Unshelve. Focus 2.
-  apply d.
-  apply X.
-  apply s.
-  apply X1.
+  eapply foo. apply d0.
 Qed.  
+ 
+Definition Inv ptr t done i s := { f : nat -> nat & (prod (pa_model s t f)
+                                 (prod ({ l : list Ptr & prod (dist s ptr l) (InT t l -> False)})
+                                 (prod
+                                (sum (find s done = Some (ResultGet (Some (f i))))
+                                     (find s done = Some (ResultGet None)))
+                                ({ f' : nat -> nat & (prod (pa_model s ptr f')
+                                                      (f i = f' i))}))))}.
+
+Definition getNewInvUgly (ptr : Ptr) (i : nat) : WhileL data nat. 
+refine (
+  Read ptr (fun vInPtr =>
+  New vInPtr (fun t =>
+  New (ResultGet None) (fun done =>
+  While (Inv ptr t done i)
+        (fun s => negb (data_get_eqb_some (find s done)))
+        (Read t (fun vInT => _ )) (* the body is refined below *)
+        (Read done (fun vInDone =>
+         match vInDone with
+           | ResultGet (Some a) => Return _ a
+           | _ => Return _ 0 (* absurd *)
+         end)))))).
+(* body of the loop *)
+destruct vInT as [ f | j v t' | | ].
+refine (Write done (ResultGet (Some (f i))) (Return _ tt)).
+refine (if Nat.eqb i j
+        then _
+        else _).
+refine (Write done (ResultGet (Some v)) (Return _ tt)).
+refine (Read t' (fun vInT' => Write t vInT' (Return _ tt))).
+refine (Return _ tt). (* absurd: t will never point to a result *)
+refine (Return _ tt). (* absurd: t will never point to a result *)
+Defined.
+
+(* get (using a loop) refinement *)
+Lemma getRefinementNewInvUgly' :  forall ptr i, wrefines (getSpec ptr i) (getNewInvUgly ptr i).
+Proof.
+  intros.
+  unfold get, getSpec.
+  READ ptr vInPtr.
+  inversion X0; subst; eauto.
+  apply newSpec'; intro t.
+  apply newSpec'; intro done.
+  eapply refineWhile
+  with (w1 := Predicate (fun s => Inv ptr t done i s)
+       (fun ss pres v s => Inv ptr t done i s))
+         (w2 := Predicate (fun s => Inv ptr t done i s)
+                         (fun ss pres v s => (projT1 pres) i = v)).
+  simpl.
+
+  eapply (Refinement _ _ _ _).
+  Unshelve.
+  Focus 3.
+  
+(*  
+  assert (d : subset (pre (semantics (Spec
+     (Predicate
+        (fun s : S data =>
+         {t0 : S data &
+         (prod {t1 : S data &
+          prod (prod {f : nat -> nat & pa_model t1 ptr f} (find t1 ptr = Some vInPtr))
+          (prod (forall (p' : M.key) (x : data), find t1 p' = Some x -> p' <> t)
+           (t0 = update t1 t vInPtr))} 
+          (prod (forall (p' : M.key) (x : data), find t0 p' = Some x -> p' <> done)
+           (s = update t0 done (ResultGet None))))%type})
+        (fun (s : S data)
+           pres
+           (v : nat) (s' : S data) =>
+         (let (f, _) := fst (fst (projT2 (fst (projT2 pres)))) in
+          fun (v0 : nat) (_ : S data) => v0 = f i) v s')))))
+
+                     (pre (semantics (Spec (BindPT
+          (Predicate (fun s : S data => Inv ptr t done i s)
+             (fun (ss : S data) (_ : Inv ptr t done i ss) 
+                (_ : unit) (s : S data) => Inv ptr t done i s))
+          (fun _ : unit =>
+           Predicate (fun s : S data => Inv ptr t done i s)
+             (fun (ss : S data) (pres : Inv ptr t done i ss) 
+                  (v : nat) (_ : S data) => projT1 pres i = v))))))).  *)
+  refine_simpl.
+  unfold Inv.
+  exists s1.
+  repeat split; auto.
+  apply pa_model_sep_padata.
+  unfold not; intros H; inversion H; symmetry in H1; apply n in H1; now apply H1.
+  apply pa_model_copy with (p := ptr); auto.
+  assert (Ha : pa_model s0 ptr s1); auto.
+  apply pa_model_dist in X0.
+  destruct X0.
+  exists x.
+  split. apply dist_sepT.
+  apply dist_sepT; auto.
+
+  
+
+    unfold not; intros.
+    clear e1 Ha.
+    induction d; subst. 
+    inversion H; subst.
+    apply n0 in e. now apply e.
+    inversion H1.
+    inversion H; subst.
+    apply n0 in e. now apply e.
+    inversion d; subst; eauto.
+
+    unfold not; intros.
+    clear e1 Ha.
+    induction d; subst.
+    inversion H; subst.
+    rewrite <- findNUpdate with (p' := t) (v := vInPtr) in e.
+    apply n in e; now apply e.
+    unfold not; intros; subst.
+    apply n0 in e; now apply e.
+    inversion H1.
+    inversion H; subst.
+    rewrite <- findNUpdate with (p' := t) (v := vInPtr) in e.
+    apply n in e; now apply e.
+    unfold not; intros; subst.
+    apply n0 in e; now apply e.
+    auto.
+    
+    unfold not; intros.
+    clear e1 Ha.
+    induction d; subst.
+    inversion H; subst.
+    apply n0 in e. now apply e.
+    inversion H1.
+    inversion H; subst.
+    apply n0 in e. now apply e.
+    inversion d; subst; eauto.    
+  
+  exists s1.
+  split; auto.
+  apply pa_model_sep_padata.
+  unfold not; intros H; inversion H; symmetry in H1; apply n in H1; now apply H1.
+  apply pa_model_sep'; auto.
+  destruct (find_eqdec s0 t); auto.
+  destruct e; apply n0 in H; exfalso; auto.
+  intros; auto.
+
+  Focus 3.
+  refine_simpl. unfold Inv in X1.
+  destruct X1; simpl in *.
+  destruct_conjs.
+
+  apply whileSpec; unfold Inv in *.
+  - refine_simpl; exists X; repeat split; eauto.
+  - READ t vInT. inversion p; eauto.
+    destruct vInT.
+    WRITE done (ResultGet (Some (n i))).
+    destruct s2; eauto.
+    RETURN tt.
+    admit. admit.
+    RETURN tt; inversion p; rewrite H in e; inversion e.
+    RETURN tt; inversion p0; rewrite H in e; inversion e.
+  - RETURN tt.
+    exists s1; repeat split; eauto.
+  - unfold Inv; READ done vInDone.
+    destruct s1; eauto.
+    destruct vInDone.
+    RETURN 0.
+    destruct s2; rewrite e in e1; inversion e1.
+    RETURN 0.
+    destruct s2; rewrite e in e1; inversion e1.
+    destruct o.
+    RETURN n.
+    destruct s2; rewrite e in e1; inversion e1.
+    reflexivity.
+    RETURN 0.
+    destruct s2; rewrite e in e1; inversion e1.
+    admit. (* missing Is_false (cond) when splitting the proof before *)
+    RETURN 0.
+    destruct s2; rewrite e in e1; inversion e1.    
+Admitted.  
+
+
+  
+(* get (using a loop) refinement *)
+Lemma getRefinementNewInvUgly :  forall ptr i, wrefines (getSpec ptr i) (getNewInvUgly ptr i).
+Proof.
+  intros.
+  unfold get, getSpec.
+  READ ptr vInPtr.
+  inversion X0; subst; eauto.
+  apply newSpec'; intro t.
+  apply newSpec'; intro done.
+  apply whileSpec.
+  - refine_simpl.
+    exists s1; repeat split; eauto.
+    apply pa_model_sep_padata.
+    unfold not; intros H; inversion H;
+    symmetry in H1; apply n in H1; now apply H1.
+    eapply pa_model_copy; eauto.
+    apply pa_model_dist in X0; destruct X0.
+    exists x.
+    split.
+    eapply dist_sepT.
+    eapply dist_sepT.
+    auto.
+
+    unfold not; intros.
+    clear e1.
+    induction d; subst. 
+    inversion H; subst.
+    apply n0 in e. now apply e.
+    inversion H1.
+    inversion H; subst.
+    apply n0 in e. now apply e.
+    inversion d; subst; eauto.
+
+    unfold not; intros.
+    clear e1.
+    induction d; subst.
+    inversion H; subst.
+    rewrite <- findNUpdate with (p' := t) (v := vInPtr) in e.
+    apply n in e; now apply e.
+    unfold not; intros; subst.
+    apply n0 in e; now apply e.
+    inversion H1.
+    inversion H; subst.
+    rewrite <- findNUpdate with (p' := t) (v := vInPtr) in e.
+    apply n in e; now apply e.
+    unfold not; intros; subst.
+    apply n0 in e; now apply e.
+    auto.
+    
+    unfold not; intros.
+    clear e1.
+    induction d; subst.
+    inversion H; subst.
+    apply n0 in e. now apply e.
+    inversion H1.
+    inversion H; subst.
+    apply n0 in e. now apply e.
+    inversion d; subst; eauto.    
+    
+    exists s1.
+    split; eauto.
+    apply pa_model_sep_padata.
+    unfold not; intros H; inversion H;
+    symmetry in H1; apply n in H1; now apply H1.
+    apply pa_model_sep'; auto.
+    destruct (find_eqdec s0 t); auto.
+    destruct e; apply n0 in H; exfalso; auto.
+  - READ t vInT.
+    inversion p; eauto.
+    destruct vInT.
+    WRITE done (ResultGet (Some (n i))).
+    destruct s2; eauto.
+    RETURN tt; eauto.
+    eexists; repeat split; eauto.
+    apply pa_model_sep_padata.
+    unfold not; intros HInv.
+    destruct s2; rewrite e in HInv; inversion HInv.
+    eauto.
+    exists s1.
+    split; auto.
+    apply dist_sepT; auto.
+
+    clear p0.
+    unfold not; intros.
+    induction d; subst.
+    inversion H; subst.
+    destruct s2; rewrite e2 in e; inversion e.
+    inversion H1.
+    inversion H; subst.
+    destruct s2; rewrite e2 in e; inversion e.
+    auto.
+        
+    exists s3; eauto.
+    split; auto.
+    inversion p; subst; rewrite e0 in H; inversion H; subst.
+    apply pa_model_sep_padata.
+    unfold not; intros HInv; destruct s2; rewrite e in HInv; inversion HInv.
+    auto.
+    inversion p; subst; rewrite e0 in H; inversion H; now subst.    
+    destruct (Nat.eq_dec i n).
+    subst.
+    rewrite PeanoNat.Nat.eqb_refl.
+    WRITE done (ResultGet (Some n0)).
+    destruct s2; eauto.
+    RETURN tt; eauto.
+    eexists; split; eauto. 
+    apply pa_model_sep_padata; eauto.
+    unfold not; intros HInv.
+    destruct s2; auto; rewrite e in HInv; inversion HInv.
+    destruct s2; rewrite e in i.
+    exfalso; auto; simpl in i.
+    split.
+    exists s1.
+    split.
+    apply dist_sepT; auto.
+
+    clear p0 p1.
+    unfold not; intros.
+    induction d; subst.
+    inversion H; subst.
+    rewrite e in e2; inversion e2.
+    inversion H1.
+    inversion H; subst.
+    rewrite e in e2; inversion e2.
+    apply IHd.
+    intros; apply f; auto.
+    auto.
+
+    auto.
+    split.
+    left; rewrite findUpdate; repeat apply f_equal.
+    inversion p0; rewrite H in e0; inversion e0; subst.
+    unfold upd; now rewrite <- beq_nat_refl.
+    exists s3; split; auto.
+    apply pa_model_sep_padata; auto.
+    rewrite e; unfold not; intros HInv; inversion HInv.
+    apply Nat.eqb_neq in n1.
+    rewrite n1.
+    READ p vInT'.
+    inversion p0; subst; rewrite e in H; inversion H; subst.
+    inversion X; subst; eauto.
+    WRITE t vInT'.
+    RETURN tt; eauto.
+    inversion p0; subst; rewrite e1 in H; inversion H; subst; clear H.
+    exists f0.
+    repeat split.
+
+    eapply pa_model_desc; eauto.
+    
+    exists s1.
+    split; auto; apply dist_sepT; auto.
+    destruct s2; auto.
+    left. rewrite findNUpdate; eauto 1. rewrite e. repeat apply f_equal. unfold upd; now rewrite n1.
+    unfold not; intros; subst; rewrite e1 in e; inversion e.
+    right; rewrite findNUpdate; eauto 1; unfold not; intros; subst; rewrite e1 in e; inversion e.
+    exists s3. split; auto.
+    assert (Ha : pa_model pre ptr s3) by assumption.
+    apply pa_model_dist in Ha; destruct Ha.
+    eapply pa_model_sep_uglyT; eauto.
+    assert (Ha : x = s1) by (eapply dist_fun; eauto). subst.
+    auto.
+    rewrite <- e2.
+    unfold upd; now rewrite n1.
+    RETURN tt; eauto.
+    inversion p; subst; rewrite e in H; inversion H.
+    RETURN tt; eauto.
+    inversion p0; subst; rewrite e in H; inversion H.
+  - READ done vInDone.
+    destruct s3; eauto.
+    destruct vInDone.
+    admit.
+    admit.
+    destruct o.
+    RETURN n.
+    destruct s3.
+    rewrite e1 in e.
+    inversion e.
+    subst.
+Admitted.
+
+
+
+(* ENDS HERE: new get *)
+
+
+
+Definition getNewInv (ptr : Ptr) (i : nat) : WhileL data nat. 
+refine (
+  Read ptr (fun vInPtr =>
+  New vInPtr (fun t =>
+  New (ResultGet None) (fun done =>
+  While (fun s => { f : nat -> nat & (prod (pa_model s t f) (prod
+                                (sum (find s done = Some (ResultGet (Some (f i))))
+                                     (find s done = Some (ResultGet None)))
+                                ({ f' : nat -> nat & (prod (pa_model s ptr f')
+                                                       (f i = f' i))})))})
+        (fun s => negb (data_get_eqb_some (find s done)))
+        (Read t (fun vInT => _ )) (* the body is refined below *)
+        (Read done (fun vInDone =>
+         match vInDone with
+           | ResultGet (Some a) => Return _ a
+           | _ => Return _ 0 (* absurd *)
+         end)))))).
+(* body of the loop *)
+destruct vInT as [ f | j v t' | | ].
+refine (Write done (ResultGet (Some (f i))) (Return _ tt)).
+refine (if Nat.eqb i j
+        then _
+        else _).
+refine (Write done (ResultGet (Some v)) (Return _ tt)).
+refine (Read t' (fun vInT' => Write t vInT' (Return _ tt))).
+refine (Return _ tt). (* absurd: t will never point to a result *)
+refine (Return _ tt). (* absurd: t will never point to a result *)
+Defined.
+  
+(* get (using a loop) refinement *)
+Lemma getRefinementNewInv :  forall ptr i, wrefines (getSpec ptr i) (getNewInv ptr i).
+Proof.
+  intros.
+  unfold get, getSpec.
+  READ ptr vInPtr.
+  inversion X0; subst; eauto.
+  apply newSpec'; intro t.
+  apply newSpec'; intro done.
+  apply whileSpec.
+  - refine_simpl.
+    exists s1; repeat split; eauto.
+    apply pa_model_sep_padata.
+    unfold not; intros H; inversion H;
+    symmetry in H1; apply n in H1; now apply H1.
+    eapply pa_model_copy; eauto.
+    exists s1.
+    split; eauto.
+    apply pa_model_sep_padata.
+    unfold not; intros H; inversion H;
+    symmetry in H1; apply n in H1; now apply H1.
+    apply pa_model_sep'; auto.
+    destruct (find_eqdec s0 t); auto.
+    destruct e; apply n0 in H; exfalso; auto.
+  - READ t vInT.
+    inversion p; eauto.
+    destruct vInT.
+    WRITE done (ResultGet (Some (n i))).
+    destruct s1; eauto.
+    RETURN tt; eauto.
+    eexists; repeat split; eauto.
+    apply pa_model_sep_padata.
+    unfold not; intros HInv.
+    destruct s1; rewrite e in HInv; inversion HInv.
+    eauto.
+    exists s2; eauto.
+    split; auto.
+    inversion p; subst; rewrite e0 in H; inversion H; subst.
+    apply pa_model_sep_padata.
+    unfold not; intros HInv; destruct s1; rewrite e in HInv; inversion HInv.
+    auto.
+    inversion p; subst; rewrite e0 in H; inversion H; now subst.    
+    destruct (Nat.eq_dec i n).
+    subst.
+    rewrite PeanoNat.Nat.eqb_refl.
+    WRITE done (ResultGet (Some n0)).
+    destruct s1; eauto.
+    RETURN tt; eauto.
+    eexists; split; eauto. 
+    apply pa_model_sep_padata; eauto.
+    unfold not; intros HInv.
+    destruct s1; auto; rewrite e in HInv; inversion HInv.
+    destruct s1; rewrite e in i.
+    exfalso; auto; simpl in i.
+    split. left; rewrite findUpdate; repeat apply f_equal.
+    inversion p0; rewrite H in e0; inversion e0; subst.
+    unfold upd; now rewrite <- beq_nat_refl.
+    exists s2; split; auto.
+    apply pa_model_sep_padata; auto.
+    rewrite e; unfold not; intros HInv; inversion HInv.
+    apply Nat.eqb_neq in n1.
+    rewrite n1.
+    READ p vInT'.
+    inversion p0; subst; rewrite e in H; inversion H; subst.
+    inversion X; subst; eauto.
+    WRITE t vInT'.
+    RETURN tt; eauto.
+    inversion p0; subst; rewrite e1 in H; inversion H; subst; clear H.
+    exists f.
+    repeat split.
+    admit. (* apparently provable by e0 and e1 *)
+    destruct s1; auto.
+    left. rewrite findNUpdate; auto. rewrite e. repeat apply f_equal. unfold upd; now rewrite n1.
+    unfold not; intros; subst. rewrite e1 in e; inversion e.
+    right; auto; rewrite findNUpdate; eauto 1;
+    unfold not; intros; subst; rewrite e1 in e; inversion e.
+    exists s2. split; auto.
+    admit. (* how to prove this? *)
+    unfold upd in e2; now rewrite n1 in e2.
+    RETURN tt; eauto.
+    inversion p; subst; rewrite e in H; inversion H.
+    RETURN tt; eauto.
+    inversion p0; subst; rewrite e in H; inversion H.
+  - READ done vInDone.
+    destruct s2; eauto.
+    destruct vInDone.
+    admit.
+    admit.
+    destruct o.
+    RETURN n.
+    destruct s3.
+    rewrite e1 in e.
+    inversion e.
+    subst.
+    Print pa_model.
+    
+    rewrite e0 in i0; simpl in i0; exfalso; auto.
+    admit.
+
+    
+Admitted.
+
 
 
 (* get (using a loop) refinement *)
 Lemma getRefinement :  forall ptr i, wrefines (getSpec ptr i) (get ptr i).
 Proof.
   intros.
-  unfold get.
+  unfold get, getSpec.
   READ ptr vInPtr.
   inversion X0; subst; eauto.
-  NEW vInPtr t.
-  (* NEW (ResultGet None) done. *)
-  apply newSpec; [ | intros done]; simpl; intros. (* ; goal_simpl. *)
-  destruct_conjs.
-  exists (update s (alloc s) (ResultGet None)).
-  subst. repeat split.
-  exists s0.
-  admit.
-  rewrite findNUpdate.
-  rewrite findNUpdate.
-  auto.
-  eapply n.
-  eassumption.
-  admit. (* heap lemma? *)
-  intros.
-  eapply n.
-  admit. (* heap lemma? *)
-  admit. (* heap lemma? *)
+  apply newSpec'; intro t.
+  apply newSpec'; intro done.
+
+
   apply whileSpec.
   - refine_simpl.
     inversion X0; subst.
@@ -382,9 +1113,11 @@ Proof.
     eapply n.
     now rewrite findUpdate.
     apply pa_model_sep'.
-    admit. (* do we need to re-formulate newSpec? *)
+    destruct (find_eqdec (update s0 t (Diff i0 v p')) done); auto.
+    destruct e; exfalso; eapply n; eauto.
     apply pa_model_sep'.
-    admit. (* do we need to re-formulate newSpec? *)
+    destruct (find_eqdec s0 t); auto.
+    destruct e; exfalso; eapply n0; eauto.
     apply X.
     eapply n; now rewrite findUpdate.
     eauto.
@@ -392,12 +1125,12 @@ Proof.
     inversion X0; subst; eauto.
     destruct vInT.
     WRITE done (ResultGet (Some (n i))).
-    RETURN tt.
+    RETURN tt; eauto.
     destruct (Nat.eq_dec i n).
     subst.
     rewrite PeanoNat.Nat.eqb_refl.
     WRITE done (ResultGet (Some n0)).
-    RETURN tt.
+    RETURN tt; eauto.
     inversion X0; subst; rewrite e0 in H; inversion H; subst; clear H.
     exists (upd f i0 v).
     apply pa_model_diff with (p' := p').
@@ -410,7 +1143,7 @@ Proof.
     inversion X0; subst; rewrite e in H; inversion H; subst; clear H.
     inversion X1; eauto.
     WRITE t vInT'.
-    RETURN tt.
+    RETURN tt; eauto.
     inversion X0; subst; rewrite e1 in H; inversion H; subst; clear H.
     inversion X1; subst; rewrite e0 in H; inversion H; subst; clear H.
     eauto.
@@ -418,17 +1151,20 @@ Proof.
     eapply pa_model_diff.
     now rewrite findUpdate.
     admit. (* seems to follow from X2, if t <> p'0 *)
-    RETURN tt.
-    RETURN tt.
+    RETURN tt; eauto.
+    RETURN tt; eauto.
   - READ done vInDone.
     destruct vInDone.
-    RETURN 0.
-    rewrite X in i0; inversion i0.
-    RETURN 0.
-    rewrite X in i0; inversion i0.
+    Focus 3.
     destruct o.
     RETURN n.
+    rewrite X in e; inversion e; subst; clear e.
     admit.
+    Set Ltac Debug.
+    RETURN 0.
+    rewrite X in i0; inversion i0.
+    RETURN 0.
+    rewrite X in i0; inversion i0.
     RETURN 0.
     rewrite X in i0; inversion i0.
     RETURN 0.

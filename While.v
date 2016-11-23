@@ -203,6 +203,40 @@ Lemma newStep {a : Type} (y : v) (spec : PT _ a)
     destruct Step as [w S]; exists (New y w); now eapply newSpec.
   Qed.
 
+Lemma newSpec' {a : Type} (y : v) (spec : PT v a) (w : Ptr -> WhileL a)
+      (Step : forall p, Spec (Predicate (fun s => { t : S v & prod (pre spec t)
+                                          (prod (forall p' x, find t p' = Some x -> p' <> p)
+                                          (s = (update t p (y)))) })
+                                      (fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s')) ⊑ w p) :
+  Spec spec ⊑ New y w.
+Proof.
+  unshelve eapply newRefines.
+  * refine_simpl.
+    exists (alloc s); split;
+    destruct (Step (alloc s)) as [d h];
+    [ apply allocFresh |
+      apply d; destruct spec; simpl in * ].
+    exists s.
+    repeat split; eauto.
+    unfold not; intros p' HIn HEq; subst.
+    apply (allocDiff1 _ HEq).
+  * refine_simpl; destruct spec; destruct (Step (alloc s)).
+    destruct (semantics (w (alloc s))).
+    now apply s1 in X.
+Qed.
+
+Lemma newStep' {a : Type} (y : v) (spec : PT _ a)
+      (Step : {w : (Ptr -> WhileL a) & forall (p : Ptr),
+                Spec (Predicate (fun s => { t : S v & prod (pre spec t)
+                                            (prod (forall p' x, find t p' = Some x -> p' <> p)
+                                                  (s = (update t p (y)))) })
+                        (fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s')) ⊑ w p}) :
+  {w : WhileL a & Spec spec ⊑ w}.
+  Proof.
+    destruct Step as [w S]; exists (New y w); now apply newSpec'.
+  Qed.
+    
+  
 Lemma writeRefines {a : Type} (w w' : WhileL a) (ptr : Ptr) (y : v)
   (d : subset (pre (semantics w)) (pre (semantics (Write ptr y w')))) 
   (h : forall (s : S v)(p : pre (semantics w) s)  (x : a) (s' : S v), 
@@ -301,8 +335,8 @@ Lemma whileSpec {a : Type} (I : S v -> Type) (c : S v -> bool) (spec : PT _ a) (
     * unshelve econstructor; refine_simpl; [ now apply d2 | eapply h2; eassumption].
     * refine_simpl; eapply d1; unshelve econstructor; [exact s | now eauto].
     * refine_simpl. unshelve refine (h1 X (existT _ s ( x , _)) _ _ _); [now eauto | eassumption ].
-   Qed.
-
+  Qed.
+ 
 
 (* TODO how to include continuation? *)
 Lemma refineWhilePT {a} (inv : S v -> Type) (cond : S v -> bool) (Q : S v -> Type) : 
@@ -368,6 +402,44 @@ Proof.
   intros H; now unfold bind in H.
 Qed.
 
+Lemma refineWhile' {a : Type} (k : WhileL a) (body : WhileL unit)
+      (w1 : PT _ unit) (w w2 : PT _ a)
+      (cond : S v -> bool) (inv : S v -> Type) :
+  Spec w ⊑ Spec (SeqPT w1 w2) -> 
+  Spec w1 ⊑ While inv cond body (Return tt) ->
+  Spec w2 ⊑ k -> 
+  Spec w ⊑ While inv cond body k.
+Proof.
+  intros H1 H2 H3.
+  eapply refineTrans.
+  apply H1.
+  apply refineWhileFork.
+  eapply (Refinement _ _ _ ).
+  Unshelve. Focus 2.
+  destruct H2.
+  destruct H3.
+  destruct w1, w2.
+  refine_simpl.
+  pose (d s1 X); destruct s2; destruct x; apply i.
+  pose (d s1 X); destruct s2; destruct x; apply s2.
+  refine_simpl.
+  destruct (semantics k).
+  refine_simpl.
+  apply d0.
+  eapply X0.
+  apply s.
+  eexists.
+  exists tt.
+  eexists.
+  split; [ apply i | apply i0 ].
+  split; eauto.
+  destruct H2, H3,w1, w2.
+  refine_simpl.
+  destruct (semantics k).
+  refine_simpl.
+  eauto.  
+Qed.   
+
 Lemma refineWhile {a : Type} (k : WhileL a) (body : WhileL unit)
       (w1 : PT _ unit) (w w2 : PT _ a)
       (cond : S v -> bool) (inv : S v -> Type) :
@@ -404,7 +476,29 @@ Proof.
   destruct (semantics k).
   refine_simpl.
   eauto.  
-Qed.   
+Qed.
+
+Lemma refineWhile2 {a : Type} (k : WhileL a) (body : WhileL unit)
+      (w : PT _ a) (cond : S v -> bool) (inv : S v -> Type) :
+  Spec (Predicate (pre w) (fun s pres _ s' => prod (inv s) (Is_false (cond s)))) ⊑
+       While inv cond body (Return tt) ->
+  Spec (Predicate (fun s => {t : S v & {pre : pre (semantics ((While inv cond body (Return tt)))) t & post (semantics (While inv cond body (Return tt))) t pre tt s } })
+                  (fun s _ v s' => {pres : pre w s & post w s pres v s'  })) ⊑ k -> 
+  Spec w ⊑ While inv cond body k.
+Proof.
+  intros.
+  assert (d : subset (pre w) (pre (semantics (While inv cond body k)))).
+  destruct X.
+  unfold subset in *; simpl in *.
+  intros.
+  apply d in X.
+  destruct X.
+  destruct x.
+  eexists.
+  split; eauto.
+  intros.
+  
+Admitted.
   
   
 End WHILE.
@@ -461,7 +555,7 @@ Ltac READ ptr v := eapply (readSpec ptr); [ | intros v]; goal_simpl.
 Ltac NEW v ptr := eapply (@newSpec _ _ v);  [ | intros ptr]; goal_simpl.
 Ltac WRITE ptr v := eapply (@writeSpec _ _ ptr v); goal_simpl.
 Ltac ASSERT P := unshelve eapply (changeSpec P); goal_simpl.
-Ltac RETURN v := eapply (returnStep v); unfold_refinements; goal_simpl; context_simpl; context_clean.
+Ltac RETURN v := eapply (returnStep v); unfold_refinements; refine_simpl; context_simpl; context_clean.
 
 Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity).
 
