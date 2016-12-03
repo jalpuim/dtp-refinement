@@ -24,7 +24,7 @@ Inductive WhileL (a : Type) : Type :=
   | New    : v -> (Ptr -> WhileL a) -> WhileL a
   | Read   : Ptr -> (v -> WhileL a) -> WhileL a
   | Write  : Ptr -> v -> WhileL a  -> WhileL a
-  | While  : (S v -> Type) -> (S v -> bool) -> WhileL unit -> WhileL a -> WhileL a
+  | While  : (S v -> S v -> Type) -> (S v -> bool) -> WhileL unit -> WhileL a -> WhileL a
   | Spec   : PT v a -> WhileL a
   | Return : a -> WhileL a.
 
@@ -51,7 +51,7 @@ Fixpoint semantics {a : Type} (w: WhileL a) : PT v a :=
       let post := fun s pres res s' =>
                     post (semantics k) (update s ptr x) (snd pres) res s' in
       Predicate pre post
-    | While inv c body k => SeqPT (WhilePT inv c (semantics body)) (@semantics a k)
+    | While inv c body k => SeqPT (WhilePT' inv c (semantics body)) (@semantics a k)
     | Spec s => s
     | Return  x => Predicate (fun s => True) (fun s _ v s' => s = s' /\ v = x)
   end.
@@ -303,7 +303,7 @@ Lemma changeSpec {a : Type} (pt2 pt1 : PT _ a) (w : WhileL a)
 
 (** While (loop) **)
 
-Lemma whileRefines {a : Type} (I : S v -> Type) (c : S v -> bool) (body : WhileL unit) (w k : WhileL a)
+Lemma whileRefines {a : Type} (I : S v -> S v -> Type) (c : S v -> bool) (body : WhileL unit) (w k : WhileL a)
   (d : subset (pre (semantics w)) (pre (semantics (While I c body k))))
   (h : forall (s : S v)(p : pre (semantics w) s) (x : a) (s' : S v), 
     post (semantics (While I c body k)) s (d s p) x s' -> post (semantics w) s p x s')
@@ -313,11 +313,11 @@ Lemma whileRefines {a : Type} (I : S v -> Type) (c : S v -> bool) (body : WhileL
   Qed.
 
 
-Lemma whileSpec {a : Type} (I : S v -> Type) (c : S v -> bool) (spec : PT _ a) (k : WhileL a) (body : WhileL unit)
-  (d : forall s, pre spec s -> I s)
-  (refineBody : Spec (Predicate (fun s => prod (I s) (Is_true (c s))) (fun s pres _ s' => I s')) ⊑ body)
+Lemma whileSpec {a : Type} (I : S v -> S v -> Type) (c : S v -> bool) (spec : PT _ a) (k : WhileL a) (body : WhileL unit)
+  (d : forall s, pre spec s -> I s s)
+  (refineBody : Spec (Predicate (fun s => {t : S v & prod (I t s) (Is_true (c s))}) (fun s pres _ s' => I (projT1 pres) s')) ⊑ body)
   (refineRest : Spec (Predicate (fun s => {t : S v & prod (pre spec t) (
-                                                     prod (I s) (
+                                                     prod (I t s) (
                                                           (Is_false (c s))
                                           (* This states that there is some initial state t that satisfies the precondition of spec
                                              such that we can go from t to a new state s (after having run through the loop) 
@@ -332,9 +332,28 @@ Lemma whileSpec {a : Type} (I : S v -> Type) (c : S v -> bool) (spec : PT _ a) (
   Proof.
     unshelve econstructor; destruct spec as [pre post]; destruct refineRest as [d1 h1]; destruct refineBody as [d2 h2]; refine_simpl.
     * now eauto.
-    * unshelve econstructor; refine_simpl; [ now apply d2 | eapply h2; eassumption].
+    * unshelve econstructor; refine_simpl. apply d2. exists s; split; auto.
+      destruct (semantics body).
+      destruct (semantics k).
+      pose (h2 s).
+      assert (Ha := h2 _ _ _ _ X0).
+      now simpl in Ha.
     * refine_simpl; eapply d1; unshelve econstructor; [exact s | now eauto].
     * refine_simpl. unshelve refine (h1 X (existT _ s ( x , _)) _ _ _); [now eauto | eassumption ].
+  Qed.
+
+  (*
+Lemma whileSpec' {a : Type} (I : S v -> Type) (c : S v -> bool) (spec : PT _ unit) (k : WhileL a) (body : WhileL unit)
+      (d : forall s, pre spec s -> I s)
+      (d' : forall s, prod (I s) (Is_false (c s)) -> forall ss pres, post spec ss pres tt s)
+  (refineBody : Spec (Predicate (fun s => prod (I s) (Is_true (c s))) (fun s pres _ s' => I s')) ⊑ body)
+  :
+  Spec spec ⊑ While I c body (Return tt).
+  Proof.
+    unshelve econstructor; destruct spec as [pre post]; destruct refineBody as [d2 h2]; refine_simpl.
+    * now eauto.
+    * unshelve econstructor; refine_simpl; [ now apply d2 | eapply h2; eassumption].
+    * refine_simpl. now apply d'. 
   Qed.
  
 
@@ -351,7 +370,7 @@ Lemma refineWhilePT {a} (inv : S v -> Type) (cond : S v -> bool) (Q : S v -> Typ
     apply (Refinement _ _ d).
     intros; repeat split; refine_simpl; destruct_conjs; now auto.
   Qed.
-
+*)
 (*
 Lemma whileRefines {a : Type} (k : WhileL a) (body : WhileL unit) (w : PT _ a)
       (cond : S v -> bool) (inv : S v -> Type)
@@ -393,7 +412,8 @@ Proof.
   unshelve eapply (Refinement _ _ _); refine_simpl; eauto.
 Qed.
 
-(* Splitting a while loop and its continuation *)
+
+(* Splitting a while loop and its continuation *) (*
 Lemma refineWhileFork {a : Type} (w k : WhileL a) (body : WhileL unit)
       (cond : S v -> bool) (inv : S v -> Type) :
   w ⊑ bind (While inv cond body (Return tt)) (fun _ => k) ->
@@ -499,7 +519,7 @@ Proof.
   intros.
   
 Admitted.
-  
+  *)
   
 End WHILE.
 

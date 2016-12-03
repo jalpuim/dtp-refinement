@@ -147,6 +147,18 @@ Definition WhilePT {a : Type} (inv : S -> Type) (cond : S -> bool) (body : PT a)
   let whilePost := (fun _ _ _ s' => prod (inv s') (Is_false (cond s'))) in
   [ whilePre , whilePost ].
 
+Definition WhilePT' {a : Type} (* inv: initial state -> current state -> Type*)
+           (inv : S -> S -> Type) (cond : S -> bool) (body : PT a) : PT a :=
+  let whilePre := (fun si =>   (* The invariant should hold initially *)
+                             prod (inv si si)
+                              (* If we enter the loop, the precondition of the body should hold *)
+                            { H : (forall s, prod (Is_true (cond s)) (inv si s) -> pre body s) &
+                              (* The loop body should preserve the invariant *)
+                            (forall s v s' (t : prod (Is_true (cond s)) (inv si s)), post body s (H s t) v s' -> inv si s')})                          
+  in
+  let whilePost := (fun s _ _ s' => prod (inv s s') (Is_false (cond s'))) in
+  [ whilePre , whilePost ].
+
 Definition SeqPT {a b : Type} (pt1 : PT a) (pt2 : PT b) : PT b :=
   let seqPre := fun s => { pres : pre pt1 s & forall t v, post pt1 s pres v t -> pre pt2 t} in
   let seqPost : forall s : S, seqPre s -> b -> Pow S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) => 
