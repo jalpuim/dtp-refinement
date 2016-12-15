@@ -167,6 +167,7 @@ Proof.
     now eauto.
 Qed.
 
+(*
 Lemma newSpec {a : Type} (y : v) (spec : PT v a) (w : Ptr -> WhileL a)
       (H : forall s, pre spec s -> pre spec (update s (alloc s) (y)))
       (Step : forall p,
@@ -202,8 +203,9 @@ Lemma newStep {a : Type} (y : v) (spec : PT _ a)
   Proof.
     destruct Step as [w S]; exists (New y w); now eapply newSpec.
   Qed.
+*)
 
-Lemma newSpec' {a : Type} (y : v) (spec : PT v a) (w : Ptr -> WhileL a)
+Lemma newSpec {a : Type} (y : v) (spec : PT v a) (w : Ptr -> WhileL a)
       (Step : forall p, Spec (Predicate (fun s => { t : S v & prod (pre spec t)
                                           (prod (forall p' x, find t p' = Some x -> p' <> p)
                                           (s = (update t p (y)))) })
@@ -225,7 +227,7 @@ Proof.
     now apply s1 in X.
 Qed.
 
-Lemma newStep' {a : Type} (y : v) (spec : PT _ a)
+Lemma newStep {a : Type} (y : v) (spec : PT _ a)
       (Step : {w : (Ptr -> WhileL a) & forall (p : Ptr),
                 Spec (Predicate (fun s => { t : S v & prod (pre spec t)
                                             (prod (forall p' x, find t p' = Some x -> p' <> p)
@@ -233,7 +235,7 @@ Lemma newStep' {a : Type} (y : v) (spec : PT _ a)
                         (fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s')) ⊑ w p}) :
   {w : WhileL a & Spec spec ⊑ w}.
   Proof.
-    destruct Step as [w S]; exists (New y w); now apply newSpec'.
+    destruct Step as [w S]; exists (New y w); now apply newSpec.
   Qed.
     
   
@@ -537,9 +539,10 @@ Hint Resolve allocFresh findAlloc1 findAlloc2.
 Hint Rewrite findUpdate findNUpdate : Heap.
 
 (* Simple tactics *)
+Ltac destruct_conjs' := repeat ((destruct_one_pair || destruct_one_ex); simpl).
 Ltac refine_unfold := unfold pre, post, subset, bind in *.
 Ltac refine_simpl := 
-  refine_unfold; intros; simpl in *; destruct_conjs; 
+  refine_unfold; intros; simpl in *; destruct_conjs'; 
   repeat split; repeat subst; simpl in *.
 Ltac unfold_refinements := unfold wrefines, semantics, preConditionOf, postConditionOf in *.
 
@@ -572,7 +575,7 @@ Ltac simpl_lookup :=
         
 (* Tactics that apply certain constructs *)
 Ltac READ ptr v := eapply (readSpec ptr); [ | intros v]; goal_simpl.
-Ltac NEW v ptr := eapply (@newSpec _ _ v);  [ | intros ptr]; goal_simpl.
+Ltac NEW v ptr := eapply (@newSpec _ _ v); intros ptr; goal_simpl.
 Ltac WRITE ptr v := eapply (@writeSpec _ _ ptr v); goal_simpl.
 Ltac ASSERT P := unshelve eapply (changeSpec P); goal_simpl.
 Ltac RETURN v := eapply (returnStep v); unfold_refinements; refine_simpl; context_simpl; context_clean.
