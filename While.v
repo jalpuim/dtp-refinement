@@ -403,6 +403,11 @@ Proof.
   repeat split.
   now destruct X.
 Admitted. *)
+
+Lemma ifSpec {a} (cond : bool) (spec : PT _ a) (wt we : WhileL a) :
+  (if cond then Spec spec ⊑ wt else Spec spec ⊑ we) ->
+  (Spec spec ⊑ (if cond then wt else we)).
+Proof. destruct cond; intros; assumption. Qed.
   
 (* Refine split at PT level *)
 Lemma refineSplitPT {a : Type} (w2 w4 : PT _ a) (w1 w3 : PT _ unit) 
@@ -414,114 +419,6 @@ Proof.
   unshelve eapply (Refinement _ _ _); refine_simpl; eauto.
 Qed.
 
-
-(* Splitting a while loop and its continuation *) (*
-Lemma refineWhileFork {a : Type} (w k : WhileL a) (body : WhileL unit)
-      (cond : S v -> bool) (inv : S v -> Type) :
-  w ⊑ bind (While inv cond body (Return tt)) (fun _ => k) ->
-  w ⊑ While inv cond body k.
-Proof.
-  intros H; now unfold bind in H.
-Qed.
-
-Lemma refineWhile' {a : Type} (k : WhileL a) (body : WhileL unit)
-      (w1 : PT _ unit) (w w2 : PT _ a)
-      (cond : S v -> bool) (inv : S v -> Type) :
-  Spec w ⊑ Spec (SeqPT w1 w2) -> 
-  Spec w1 ⊑ While inv cond body (Return tt) ->
-  Spec w2 ⊑ k -> 
-  Spec w ⊑ While inv cond body k.
-Proof.
-  intros H1 H2 H3.
-  eapply refineTrans.
-  apply H1.
-  apply refineWhileFork.
-  eapply (Refinement _ _ _ ).
-  Unshelve. Focus 2.
-  destruct H2.
-  destruct H3.
-  destruct w1, w2.
-  refine_simpl.
-  pose (d s1 X); destruct s2; destruct x; apply i.
-  pose (d s1 X); destruct s2; destruct x; apply s2.
-  refine_simpl.
-  destruct (semantics k).
-  refine_simpl.
-  apply d0.
-  eapply X0.
-  apply s.
-  eexists.
-  exists tt.
-  eexists.
-  split; [ apply i | apply i0 ].
-  split; eauto.
-  destruct H2, H3,w1, w2.
-  refine_simpl.
-  destruct (semantics k).
-  refine_simpl.
-  eauto.  
-Qed.   
-
-Lemma refineWhile {a : Type} (k : WhileL a) (body : WhileL unit)
-      (w1 : PT _ unit) (w w2 : PT _ a)
-      (cond : S v -> bool) (inv : S v -> Type) :
-  Spec w ⊑ bind (Spec w1) (fun _ => Spec w2) -> 
-  Spec w1 ⊑ While inv cond body (Return tt) ->
-  Spec w2 ⊑ k -> 
-  Spec w ⊑ While inv cond body k.
-Proof.
-  intros H1 H2 H3.
-  eapply refineTrans.
-  apply H1.
-  apply refineWhileFork.
-  eapply (Refinement _ _ _ ).
-  Unshelve. Focus 2.
-  destruct H2.
-  destruct H3.
-  destruct w1, w2.
-  refine_simpl.
-  pose (d s1 X); destruct s2; destruct x; apply i.
-  pose (d s1 X); destruct s2; destruct x; apply s2.
-  refine_simpl.
-  destruct (semantics k).
-  refine_simpl.
-  apply d0.
-  eapply X0.
-  apply s.
-  eexists.
-  exists tt.
-  eexists.
-  split; [ apply i | apply i0 ].
-  split; eauto.
-  destruct H2, H3,w1, w2.
-  refine_simpl.
-  destruct (semantics k).
-  refine_simpl.
-  eauto.  
-Qed.
-
-Lemma refineWhile2 {a : Type} (k : WhileL a) (body : WhileL unit)
-      (w : PT _ a) (cond : S v -> bool) (inv : S v -> Type) :
-  Spec (Predicate (pre w) (fun s pres _ s' => prod (inv s) (Is_false (cond s)))) ⊑
-       While inv cond body (Return tt) ->
-  Spec (Predicate (fun s => {t : S v & {pre : pre (semantics ((While inv cond body (Return tt)))) t & post (semantics (While inv cond body (Return tt))) t pre tt s } })
-                  (fun s _ v s' => {pres : pre w s & post w s pres v s'  })) ⊑ k -> 
-  Spec w ⊑ While inv cond body k.
-Proof.
-  intros.
-  assert (d : subset (pre w) (pre (semantics (While inv cond body k)))).
-  destruct X.
-  unfold subset in *; simpl in *.
-  intros.
-  apply d in X.
-  destruct X.
-  destruct x.
-  eexists.
-  split; eauto.
-  intros.
-  
-Admitted.
-  *)
   
 End WHILE.
 
@@ -550,6 +447,7 @@ Ltac goal_simpl :=  refine_simpl; eauto.
 Ltac context_simpl :=
   repeat match goal with
            | [H1 : find ?s ?T = Some ?x, H2 : find ?s ?T = Some ?y |- _ ] => assert (E : x = y) by (eapply (findUnique _ _ H1 H2)); subst x; clear H2
+           | [H1 : find ?s ?T = Some ?x, H2 : find ?s ?T = Some ?y |- _ ] => rewrite H2 in H1; inversion H1; subst
            | [H1 : find (update ?s ?X ?x) ?X = Some ?y |- _] => rewrite findUpdate in H1  
            | [H1 : find (update ?s ?X ?x) ?Y = Some ?y, H2 : ?Y <> ?X |- _] => rewrite (findNUpdate H2) in H1
          end.
@@ -579,6 +477,8 @@ Ltac NEW v ptr := eapply (@newSpec _ _ v); intros ptr; goal_simpl.
 Ltac WRITE ptr v := eapply (@writeSpec _ _ ptr v); goal_simpl.
 Ltac ASSERT P := unshelve eapply (changeSpec P); goal_simpl.
 Ltac RETURN v := eapply (returnStep v); unfold_refinements; refine_simpl; context_simpl; context_clean.
+Ltac WHILE I c := apply (whileSpec I c); goal_simpl.
+Ltac ITE c := apply (ifSpec c); remember c as b; destruct b; goal_simpl.
 
 Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity).
 
