@@ -5,6 +5,8 @@ Require Export Coq.Structures.OrderedType.
 Require Import Omega.
 Require Import String.
 
+Set Implicit Arguments.
+
 (* Addresses *)
 
 Module Addr <: OrderedType.
@@ -75,8 +77,6 @@ Module Addr <: OrderedType.
       destruct (Addr.compare n m); unfold Addr.lt in *; unfold Addr.eq in *; subst; omega.
     Qed.
 
-  Hint Resolve maxProp1 maxProp2.
-
   Open Local Scope string_scope.
 
   Definition printAddr (a : addr) (show : nat -> string) : string := 
@@ -89,175 +89,193 @@ End Addr.
 Module M := FMapAVL.Make(Addr).
 Module MFacts := WFacts_fun(Addr)(M).
 Import MFacts.
+Section Heaps.
+  Variable (a : Type). 
+  Definition heap: Type :=  M.t a.
 
-Inductive Dynamic : Type :=
-  | dyn : forall a, a -> Dynamic.
+  Definition find (h: heap) k := M.find k h.
 
-Definition heap: Type := M.t Dynamic.
+  Definition update (h : heap) k v := M.add k v h.
 
-Definition find (h: heap) k := M.find k h.
+  Definition empty : heap := M.empty a.
 
-Definition update (h : heap) k v := M.add k v h.
-
-Definition empty : heap := M.empty Dynamic.
-
-(** Lemmas **)
-Lemma findUpdate (h : heap) (p : Addr.t) (d : Dynamic) :
-  find (update h p d) p = Some d.
-Proof. 
-  apply M.find_1; now apply M.add_1.
-Qed.
-
-Lemma findNUpdate1 (h : heap) (p p' : Addr.t) (D : p <> p') (x : option Dynamic) (v : Dynamic) :
-  find h p = x ->
-  find (update h p' v) p = x.
-Proof.
-  intros H; unfold find, update; rewrite add_neq_o; now eauto.
-Qed.
-
-Lemma findNUpdate2 (h : heap) (p p' : Addr.t) (D : p <> p') (x : option Dynamic) (v : Dynamic) :
-  find h p = x ->
-  x = find (update h p' v) p.
-Proof.
-  intros H; unfold find, update; rewrite add_neq_o; now eauto.
-Qed.
-
-Hint Resolve findUpdate findNUpdate1 findNUpdate2.
-
-Lemma findIn : forall ptr s a v,
-  find s ptr = Some (dyn a v) ->
-  M.In (elt:=Dynamic) ptr s.
-Proof.
-  unfold find; intros.
-  apply MFacts.in_find_iff.
-  unfold not; intros; auto.
-  rewrite H0 in H; inversion H.
-Qed.
-
-(** Allocation **)
-
-Fixpoint maxTree {e : Type} (t : M.Raw.tree e) (a : Addr.t) : Addr.t :=
-  match t with
-    | M.Raw.Leaf _ => Addr.incr a
-    | M.Raw.Node l y e r h => maxTree r (Addr.max a y)
-  end.
-
-Definition maxHeap (h : heap) (a : Addr.t) : Addr.t.
-  destruct h. apply (maxTree this a).
-Defined.
-
-(*
-Definition maxHeap (h : heap) (a : Addr.t) :=
-  match h with
-   | {| M.this := t|} => maxTree t a
-  end.
-*)
-
-Definition alloc (h : heap) : Addr.t := maxHeap h (Addr.MkAddr 0).
-
-(* Properties of allocate *)
-
-Lemma maxStep {e : Type} (t : heap) : forall a, Addr.lt a (maxTree (M.this t) a).
-  Proof.
-    destruct t as [this H]; induction this.
-    - destruct a; unfold Addr.lt; simpl; omega.
-    - simpl; intros a; inversion H; subst.
-      unfold Addr.lt; eapply le_lt_trans; [now (apply Addr.maxProp1) | now (apply (IHthis2 H6))].
+  (** Lemmas **)
+  Lemma findUpdate (h : heap) (p : Addr.t) (d : a) :
+    find (update h p d) p = Some d.
+  Proof. 
+    apply M.find_1; now apply M.add_1.
   Qed.
 
-Lemma isLeast (t : heap) : forall a, M.Raw.lt_tree (maxHeap t a) (M.this t).
-  destruct t as [this is_bst]; induction this.
-  - intros; now apply M.Raw.Proofs.lt_leaf.
-  - inversion is_bst; subst; simpl in *; intros a. 
-    assert (ltM1 : Addr.fromAddr k <= Addr.fromAddr (Addr.max a k)) by apply (Addr.maxProp2 a k).
-    assert (ltM2 : Addr.fromAddr (Addr.max a k) < Addr.fromAddr (maxTree this2 (Addr.max a k)))
-        by apply (maxStep (e:=Dynamic) {| M.this := this2; M.is_bst := H5 |}).
-    assert (ltM3 : Addr.fromAddr k < Addr.fromAddr (maxTree this2 (Addr.max a k))) by omega.
-    apply M.Raw.Proofs.lt_tree_node.
-    * apply (M.Raw.Proofs.lt_tree_trans ltM3 H6).
-    * now apply IHthis2.
-    * assumption. 
-  Qed.
-    
-Lemma allocNotIn (h : heap) : ~ M.In (alloc h) h.
-  assert (H : ~ M.Raw.In (alloc h) (M.this h)) by apply M.Raw.Proofs.lt_tree_not_in, isLeast.
-  now (intros F; apply H; apply M.Raw.Proofs.In_alt).
-Qed.
-
-Lemma allocFresh (h : heap) : find h (alloc h) = None.
-Admitted.
-
-
-Lemma findAlloc1 (h : heap) (v : Dynamic) (p : Addr.t) :
-  M.In p h ->
-  find (update h (alloc h) v) p = find h p.
-Proof.
-  intro HIn; unfold find; apply add_neq_o.
-  unfold not; intros; subst; now apply allocNotIn in HIn.
-Qed.
-
-Lemma findAlloc2 (h : heap) (v : Dynamic) (p : Addr.t) :
-  M.In p h ->
-  find h p = find (update h (alloc h) v) p.
-Proof.
-  intro HIn; unfold find; symmetry.
-  now apply findAlloc1.
-Qed.
-
-Hint Resolve allocFresh findAlloc1 findAlloc2.
-
-Lemma allocDiff1 (v : Dynamic) (h : heap) (ptr : Addr.t) :
-  find h ptr = Some v -> 
-  ptr <> alloc h.
-Admitted.
-
-Lemma allocDiff2 (v : Dynamic) (h : heap) (ptr : Addr.t) :
-  find h ptr = Some v -> 
-  alloc h <> ptr.
-Admitted.
-
-Lemma someIn (v : Dynamic) (h : heap) (ptr : Addr.t) :
-  find h ptr = Some v -> M.In ptr h.
-Admitted.
-
-Lemma heapGrows {a b: Type} (s : heap) (x : a) (y : b) (ptr : Addr.t) :
-  find s ptr = Some (dyn a x) ->
-  {z : a | find (update s (alloc s) (dyn b y)) ptr = Some (dyn a z)}.
+  Lemma findNUpdate (p p' : Addr.t) (D : p <> p') (h : heap) (v : a) :
+    find (update h p' v) p = find h p.
   Proof.
-    intros; exists x; eapply findNUpdate1; try eapply allocDiff1; eassumption.
+    unfold find, update; rewrite add_neq_o; now eauto.
   Qed.
 
-Lemma someExists {a : Type} (s : heap) (ptr : Addr.t) (x : a) :
-  find s ptr = Some (dyn a x) -> {v : a | find s ptr = Some (dyn a v)}.
+  Lemma findNUpdate1 (h : heap) (p p' : Addr.t) (D : p <> p') (x : option a) (v : a) :
+    find h p = x ->
+    find (update h p' v) p = x.
   Proof.
-    intros; now exists x.
+    intros H; unfold find, update; rewrite add_neq_o; now eauto.
   Qed.
 
-Lemma someExistsT {a : Type} (s : heap) (ptr : Addr.t) (x : a) :
-  find s ptr = Some (dyn a x) -> {v : a & find s ptr = Some (dyn a v)}.
+  Lemma findNUpdate2 (h : heap) (p p' : Addr.t) (D : p <> p') (x : option a) (v : a) :
+    find h p = x ->
+    x = find (update h p' v) p.
   Proof.
-    intros; now exists x.
+    intros H; unfold find, update; rewrite add_neq_o; now eauto.
   Qed.
 
 
-Lemma freshDiff1 {a : Type} (s : heap) (p q : Addr.t) (v : a) :
-  (forall p' : M.key, M.In  p' s -> p' <> p) ->
-  find s q = Some (dyn a v) ->
-  p <> q.
+  Lemma findIn : forall ptr s v,
+    find s ptr = Some (v) ->
+    M.In (elt:=a) ptr s.
   Proof.
-    intros H1 H2 Eq;
-    now (apply (H1 q); [eapply (someIn _ _ _ H2) | symmetry]).
+    unfold find; intros.
+    apply MFacts.in_find_iff.
+    unfold not; intros; auto.
+    rewrite H0 in H; inversion H.
   Qed.
 
-Lemma freshDiff2 {a : Type} (s : heap) (p q : Addr.t) (v : a) :
-  (forall p' : M.key, M.In  p' s -> p' <> p) ->
-  find s q = Some (dyn a v) ->
-  q <> p.
+  (** Allocation **)
+
+  Fixpoint maxTree {e : Type} (t : M.Raw.tree e) (a : Addr.t) : Addr.t :=
+    match t with
+      | M.Raw.Leaf _ => Addr.incr a
+      | M.Raw.Node l y e r h => maxTree r (Addr.max a y)
+    end.
+
+  Definition maxHeap (h : heap) (x : Addr.t) : Addr.t.
+    destruct h. apply (maxTree this x).
+  Defined.
+
+  (*
+  Definition maxHeap (h : heap) (a : Addr.t) :=
+    match h with
+     | {| M.this := t|} => maxTree t a
+    end.
+  *)
+
+  Definition alloc (h : heap) : Addr.t := maxHeap h (Addr.MkAddr 0).
+
+  (* Properties of allocate *)
+
+  Lemma maxStep {e : Type} (t : heap) : forall p, Addr.lt p (maxTree (M.this t) p).
+    Proof.
+      destruct t as [this H]; induction this.
+      - destruct p; unfold Addr.lt; simpl; omega.
+      - simpl; intros p; inversion H; subst.
+        unfold Addr.lt; eapply le_lt_trans; [now (apply Addr.maxProp1) | now (apply (IHthis2 H6))].
+    Qed.
+
+  Lemma isLeast (t : heap) : forall p, M.Raw.lt_tree (maxHeap t p) (M.this t).
+    destruct t as [this is_bst]; induction this.
+    - intros; now apply M.Raw.Proofs.lt_leaf.
+    - inversion is_bst; subst; simpl in *; intros p. 
+      assert (ltM1 : Addr.fromAddr k <= Addr.fromAddr (Addr.max p k)) by apply (Addr.maxProp2 p k).
+      assert (ltM2 : Addr.fromAddr (Addr.max p k) < Addr.fromAddr (maxTree this2 (Addr.max p k)))
+          by apply (maxStep (e:=a) {| M.this := this2; M.is_bst := H5 |}).
+      assert (ltM3 : Addr.fromAddr k < Addr.fromAddr (maxTree this2 (Addr.max p k))) by omega.
+      apply M.Raw.Proofs.lt_tree_node.
+      * apply (M.Raw.Proofs.lt_tree_trans ltM3 H6).
+      * now apply IHthis2.
+      * assumption. 
+    Qed.
+      
+  Lemma allocNotIn (h : heap) : ~ M.In (alloc h) h.
+    assert (H : ~ M.Raw.In (alloc h) (M.this h)) by apply M.Raw.Proofs.lt_tree_not_in, isLeast.
+    now (intros F; apply H; apply M.Raw.Proofs.In_alt).
+  Qed.
+
+  Lemma allocFresh (h : heap) : find h (alloc h) = None.
+    apply MFacts.not_find_in_iff.
+    apply allocNotIn.
+  Qed.
+
+  Lemma findAlloc1 (h : heap) (v : a) (p : Addr.t) :
+    M.In p h ->
+    find (update h (alloc h) v) p = find h p.
   Proof.
-    intros H1 H2 Eq;
-    now (apply (H1 q); [eapply (someIn _ _ _ H2) | ]).
-  Qed.    
+    intro HIn; unfold find; apply add_neq_o.
+    unfold not; intros; subst; now apply allocNotIn in HIn.
+  Qed.
+
+  Lemma findAlloc2 (h : heap) (v : a) (p : Addr.t) :
+    M.In p h ->
+    find h p = find (update h (alloc h) v) p.
+  Proof.
+    intro HIn; unfold find; symmetry.
+    now apply findAlloc1.
+  Qed.
 
 
+  Lemma allocDiff1 (v : a) (h : heap) (ptr : Addr.t) :
+    find h ptr = Some v -> 
+    ptr <> alloc h.
+  Proof.
+    intros H F; subst.
+    rewrite allocFresh in H.
+    discriminate.
+  Qed.
 
-Hint Resolve allocDiff1 allocDiff2 heapGrows someExists someExistsT someIn findAlloc1 findAlloc2 freshDiff1 freshDiff2 not_eq_sym.
+  Lemma allocDiff2 (v : a) (h : heap) (ptr : Addr.t) :
+    find h ptr = Some v -> 
+    alloc h <> ptr.
+  Proof.
+    intros H F; subst; rewrite allocFresh in H; discriminate.
+  Qed.
+
+  Lemma someIn (v : a) (h : heap) (ptr : Addr.t) :
+    find h ptr = Some v -> M.In ptr h.
+  Proof.
+    intros H; apply MFacts.in_find_iff; intros F.
+    unfold find in *; rewrite H in F; discriminate.
+  Qed.
+
+  Lemma heapGrows (s : heap) (x y : a) (ptr : Addr.t) :
+    find s ptr = Some x ->
+    {z : a | find (update s (alloc s) (y)) ptr = Some (z)}.
+    Proof.
+      intros; exists x; eapply findNUpdate1; try eapply allocDiff1; eassumption.
+    Qed.
+
+  Lemma someExists (s : heap) (ptr : Addr.t) (x : a) :
+    find s ptr = Some x -> {v : a | find s ptr = Some x}.
+    Proof.
+      intros; now exists x.
+    Qed.
+
+  Lemma someExistsT (s : heap) (ptr : Addr.t) (x : a) :
+    find s ptr = Some x -> {v : a & find s ptr = Some x}.
+    Proof.
+      intros; now exists x.
+    Qed.
+
+
+  Lemma freshDiff1 (s : heap) (p q : Addr.t) (v : a) :
+    (forall p' : M.key, M.In  p' s -> p' <> p) ->
+    find s q = Some v ->
+    p <> q.
+    Proof.
+      intros H1 H2 Eq;
+      now (apply (H1 q); [eapply (someIn _ _ H2) | symmetry]).
+    Qed.
+
+  Lemma freshDiff2 (s : heap) (p q : Addr.t) (v : a) :
+    (forall p' : M.key, M.In  p' s -> p' <> p) ->
+    find s q = Some v ->
+    q <> p.
+    Proof.
+      intros H1 H2 Eq;
+      now (apply (H1 q); [eapply (someIn _ _ H2) | ]).
+    Qed.    
+
+  Lemma findUnique (s : heap) (p : Addr.t) (x y : a) :
+    find s p = Some x -> find s p = Some y -> x = y.
+    Proof.
+      intros H1 H2.
+      assert (H : Some x = Some y) by now rewrite <- H1; rewrite <- H2.
+      now inversion H.
+    Qed.  
+
+End Heaps.

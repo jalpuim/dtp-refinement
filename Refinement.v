@@ -6,7 +6,11 @@ Require Import Program.Tactics.
                     ****   Basic definitions ****
 *******************************************************************************)
 
-Definition S := heap.
+Set Implicit Arguments.
+
+Section Refinement.
+  Variable t : Type.
+  Definition S := heap t.
 
 Definition Pow : Type -> Type := fun a => a -> Type.
 
@@ -28,12 +32,12 @@ Inductive PT (a : Type) : Type :=
 
 Definition pre {a : Type} (pt : PT a) : Pow S := 
   match pt with
-    | Predicate _ pre _ => pre
+    | Predicate pre _ => pre
   end.
 
 Definition post {a : Type} (pt : PT a) : (forall s : S, pre pt s -> a -> Pow S) :=
   match pt return (forall s : S, pre pt s -> a -> Pow S) with
-    | Predicate _ _pre p => p
+    | Predicate pre p => p
   end.
 
 Inductive Refines {a : Type} (pt1 pt2 : PT a) : Type :=
@@ -43,7 +47,7 @@ Inductive Refines {a : Type} (pt1 pt2 : PT a) : Type :=
 
 Notation "PT1 ⊏ PT2" := (Refines PT1 PT2) (at level 90, no associativity) : type_scope.
 
-Notation "[ p , q ]" := (Predicate _ p q) (at level 70) : type_scope.
+Notation "[ p , q ]" := (Predicate p q) (at level 70) : type_scope.
 
 Ltac refine_simpl  := unfold pre, post, K, Ka, subset in *; intros; simpl in *.
 Ltac destruct_pt a := refine_simpl; destruct_all (PT a).
@@ -116,15 +120,15 @@ Definition BindPT {a b : Type} (pt1 : PT a) (pt2 : a -> PT b) : PT b :=
 
 Notation "pt1 ⟫= pt2" := (BindPT pt1 pt2) (at level 52, right associativity).
 
-Definition NewPT {a : Type} (x : a) : PT Addr.t :=              
-  Predicate _ (fun s => True) 
-              (fun s _ p s' => 
-                 (forall p', p' <> p -> find s p = find s' p')
-                 /\ find s' p = Some (dyn _ x)).
+(* Definition NewPT (x : t) : PT Addr.t :=               *)
+(*   Predicate _ (fun s => True)  *)
+(*               (fun s _ p s' =>  *)
+(*                  (forall p', p' <> p -> find _ s p = find _ s' p') *)
+(*                  /\ find _ s' p = Some t). *)
 
-Definition ReadPT {a : Type} (ptr : Addr.t) : PT a :=
-  Predicate _ (fun s => exists v, find s ptr = Some (dyn a v)) 
-              (fun s pres v s' => (s = s') /\ (Some (dyn a v) = find s ptr)).
+(* Definition ReadPT {a : Type} (ptr : Addr.t) : PT a := *)
+(*   Predicate _ (fun s => exists v, find s ptr = Some (dyn a v))  *)
+(*               (fun s pres v s' => (s = s') /\ (Some (dyn a v) = find s ptr)). *)
 
 Definition Is_false (b : bool) :=
   match b with
@@ -132,15 +136,27 @@ Definition Is_false (b : bool) :=
     | false => True
   end.
 
-Definition WhilePT {a : Type} (inv : S -> Prop) (cond : S -> bool) (body : PT a) : PT a :=
+Definition WhilePT {a : Type} (inv : S -> Type) (cond : S -> bool) (body : PT a) : PT a :=
   let whilePre := (fun s =>   (* The invariant should hold initially *)
                              prod (inv s)
                               (* If we enter the loop, the precondition of the body should hold *)
-                            { H : (forall s, Is_true (cond s) /\ inv s -> pre body s) &
+                            { H : (forall s, prod (Is_true (cond s)) (inv s) -> pre body s) &
                               (* The loop body should preserve the invariant *)
-                            (forall s v s' (t : Is_true (cond s) /\ inv s), post body s (H s t) v s' -> inv s')})                          
+                            (forall s v s' (t : prod (Is_true (cond s)) (inv s)), post body s (H s t) v s' -> inv s')})                          
   in
-  let whilePost := (fun _ _ _ s' => inv s' /\ Is_false (cond s')) in
+  let whilePost := (fun _ _ _ s' => prod (inv s') (Is_false (cond s'))) in
+  [ whilePre , whilePost ].
+
+Definition WhilePT' {a : Type} (* inv: initial state -> current state -> Type*)
+           (inv : S -> S -> Type) (cond : S -> bool) (body : PT a) : PT a :=
+  let whilePre := (fun si =>   (* The invariant should hold initially *)
+                             prod (inv si si)
+                              (* If we enter the loop, the precondition of the body should hold *)
+                            { H : (forall s, prod (Is_true (cond s)) (inv si s) -> pre body s) &
+                              (* The loop body should preserve the invariant *)
+                            (forall s v s' (t : prod (Is_true (cond s)) (inv si s)), post body s (H s t) v s' -> inv si s')})                          
+  in
+  let whilePost := (fun s _ _ s' => prod (inv s s') (Is_false (cond s'))) in
   [ whilePre , whilePost ].
 
 Definition SeqPT {a b : Type} (pt1 : PT a) (pt2 : PT b) : PT b :=
@@ -155,3 +171,4 @@ Definition SeqPT {a b : Type} (pt1 : PT a) (pt2 : PT b) : PT b :=
 
 Notation "pt1 ;; pt2" := (SeqPT pt1 pt2) (at level 52, right associativity).
 
+End Refinement.
