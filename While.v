@@ -119,18 +119,8 @@ Definition refineRefl {a} (w : WhileL a) :
   Defined.
 
 (*******************************************************************************
-                   ****   Refinement properties ****
+                   ****   Refinement constructs ****
 *******************************************************************************)
-
-Lemma newRefines {a : Type} (w : WhileL a) (w' : Ptr -> WhileL a)
-  (y : v)
-  (H : subset (pre (semantics w)) (pre (semantics (New y w'))))
-  (Q : forall (s : S v) (x : pre (semantics w) s) (v' : a),
-   subset (post (semantics (New y w')) s (H s x) v') (post (semantics w) s x v'))
-  : w ⊑ New y w'.
-Proof.
-  exact (Refinement _ _ H Q).
-Qed.  
 
 Lemma readRefines {a : Type} (w : WhileL a) (w' : v -> WhileL a)
   (ptr : Ptr)
@@ -167,43 +157,27 @@ Proof.
     now eauto.
 Qed.
 
-(*
-Lemma newSpec {a : Type} (y : v) (spec : PT v a) (w : Ptr -> WhileL a)
-      (H : forall s, pre spec s -> pre spec (update s (alloc s) (y)))
-      (Step : forall p,
-                Spec (Predicate (fun s => { t : S v & prod (pre spec t)
-                                            (prod (forall p' x, find t p' = Some x -> p' <> p)
-                                                  (s = (update t p (y)))) })
-                                      (fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s')) ⊑ w p) :
-  Spec spec ⊑ New y w.
+Lemma readStep {a : Type} (ptr : Ptr)  (spec : PT _ a) 
+  (H : forall s, pre (spec) s -> {y : v & find s ptr = Some y})
+  (Step : {w : v -> WhileL a &
+            forall y, 
+            Spec (Predicate (fun s => prod (pre spec s)
+                                   (find s ptr = Some y))
+                    (fun s pres x s' => post spec s (fst pres) x s' )) ⊑ w y}) :
+  {w : WhileL a & Spec spec ⊑ w}.
 Proof.
-  unshelve eapply newRefines.
-  * refine_simpl.
-    exists (alloc s); split;
-    destruct (Step (alloc s)) as [d h];
-    [ apply allocFresh |
-      apply d; destruct spec; simpl in * ].
-    exists s.
-    repeat split; eauto.
-    unfold not; intros p' HIn HEq; subst.
-    apply (allocDiff1 _ HEq).
-  * refine_simpl; destruct spec; destruct (Step (alloc s)).
-    destruct (semantics (w (alloc s))).
-    now apply s1 in X.
+  destruct Step as [w A]; exists (Read ptr w); now apply readSpec.
 Qed.
 
-Lemma newStep {a : Type} (y : v) (spec : PT _ a) 
-      (H : forall s, pre spec s -> pre spec (update s (alloc s) (y)))
-      (Step : {w : (Ptr -> WhileL a) & forall (p : Ptr),
-                Spec (Predicate (fun s => { t : S v & prod (pre spec t)
-                                            (prod (forall p' x, find t p' = Some x -> p' <> p)
-                                                  (s = (update t p (y)))) })
-                        (fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s')) ⊑ w p}) :
-  {w : WhileL a & Spec spec ⊑ w}.
-  Proof.
-    destruct Step as [w S]; exists (New y w); now eapply newSpec.
-  Qed.
-*)
+Lemma newRefines {a : Type} (w : WhileL a) (w' : Ptr -> WhileL a)
+  (y : v)
+  (H : subset (pre (semantics w)) (pre (semantics (New y w'))))
+  (Q : forall (s : S v) (x : pre (semantics w) s) (v' : a),
+   subset (post (semantics (New y w')) s (H s x) v') (post (semantics w) s x v'))
+  : w ⊑ New y w'.
+Proof.
+  exact (Refinement _ _ H Q).
+Qed.  
 
 Lemma newSpec {a : Type} (y : v) (spec : PT v a) (w : Ptr -> WhileL a)
       (Step : forall p, Spec (Predicate (fun s => { t : S v & prod (pre spec t)
@@ -274,34 +248,12 @@ Lemma writeStep {a : Type} (ptr : Ptr) (y : v) (spec : PT _ a)
     destruct Step as [w' A]; exists (Write ptr y w'); now apply writeSpec.
   Qed.
 
-
-Lemma readStep {a : Type} (ptr : Ptr)  (spec : PT _ a) 
-  (H : forall s, pre (spec) s -> {y : v & find s ptr = Some y})
-  (Step : {w : v -> WhileL a &
-            forall y, 
-            Spec (Predicate (fun s => prod (pre spec s)
-                                   (find s ptr = Some y))
-                    (fun s pres x s' => post spec s (fst pres) x s' )) ⊑ w y}) :
-  {w : WhileL a & Spec spec ⊑ w}.
-Proof.
-  destruct Step as [w A]; exists (Read ptr w); now apply readSpec.
-Qed.
-
 Lemma returnStep {a : Type} (x : a) (w : WhileL a) 
   (H : forall (s : S v) (pre : preConditionOf w s), postConditionOf w s pre x s) : 
   w ⊑ Return x.
 Proof.
   unshelve eapply Refinement; refine_simpl; apply H.
 Qed.
-
-Lemma changeSpec {a : Type} (pt2 pt1 : PT _ a) (w : WhileL a)
-  (d : subset (pre pt1) (pre pt2))
-  (h : forall (s : S v) (x : pre pt1 s) y, subset (post pt2 s (d s x) y) (post pt1 s x y))
-  (H : Spec pt2 ⊑ w) :
-  Spec pt1 ⊑ w.
-  Proof.
-    eapply refineTrans; [ | apply H]; exact (Refinement _ _ d h).
-  Qed.
 
 (** While (loop) **)
 
@@ -344,80 +296,19 @@ Lemma whileSpec {a : Type} (I : S v -> S v -> Type) (c : S v -> bool) (spec : PT
     * refine_simpl. unshelve refine (h1 X (existT _ s ( x , _)) _ _ _); [now eauto | eassumption ].
   Qed.
 
-  (*
-Lemma whileSpec' {a : Type} (I : S v -> Type) (c : S v -> bool) (spec : PT _ unit) (k : WhileL a) (body : WhileL unit)
-      (d : forall s, pre spec s -> I s)
-      (d' : forall s, prod (I s) (Is_false (c s)) -> forall ss pres, post spec ss pres tt s)
-  (refineBody : Spec (Predicate (fun s => prod (I s) (Is_true (c s))) (fun s pres _ s' => I s')) ⊑ body)
-  :
-  Spec spec ⊑ While I c body (Return tt).
+Lemma changeSpec {a : Type} (pt2 pt1 : PT _ a) (w : WhileL a)
+  (d : subset (pre pt1) (pre pt2))
+  (h : forall (s : S v) (x : pre pt1 s) y, subset (post pt2 s (d s x) y) (post pt1 s x y))
+  (H : Spec pt2 ⊑ w) :
+  Spec pt1 ⊑ w.
   Proof.
-    unshelve econstructor; destruct spec as [pre post]; destruct refineBody as [d2 h2]; refine_simpl.
-    * now eauto.
-    * unshelve econstructor; refine_simpl; [ now apply d2 | eapply h2; eassumption].
-    * refine_simpl. now apply d'. 
+    eapply refineTrans; [ | apply H]; exact (Refinement _ _ d h).
   Qed.
- 
-
-(* TODO how to include continuation? *)
-Lemma refineWhilePT {a} (inv : S v -> Type) (cond : S v -> bool) (Q : S v -> Type) : 
-  let pt := Predicate (inv) (fun s _ _ s' => prod (inv s) (Q s')) in
-  let body : PT _ a := Predicate (fun s => prod (inv s) (Is_true (cond s))) (fun _ _ _ s' => inv s') in
-  (forall s, prod (Is_false (cond s)) (inv s) -> Q s) ->
-  Refines pt (WhilePT inv cond body).
-  Proof.
-    intros pt body QH; simpl in *.
-    assert (d: subset (pre pt) (pre (WhilePT inv cond body))) by
-      (refine_simpl; repeat split; destruct_conjs; auto).
-    apply (Refinement _ _ d).
-    intros; repeat split; refine_simpl; destruct_conjs; now auto.
-  Qed.
-*)
-(*
-Lemma whileRefines {a : Type} (k : WhileL a) (body : WhileL unit) (w : PT _ a)
-      (cond : S v -> bool) (inv : S v -> Type)
-      (H1 : forall s, pre w s -> (if cond s
-                            then pre (semantics body) s
-                            else pre (semantics k) s) * inv s)
-      (H2 : forall s pre a s', Is_true (cond s) * inv s *
-                          post (semantics body) s pre a s' ->
-                          inv s)
-      (H3 : forall s, Is_false (cond s) * inv s -> pre (semantics k) s)
-      (* this is wrong – we want to referenced the "refined w" after
-         running the loop *)
-      (H4 : forall s pres pres' a s', post (semantics k) s pres a s' ->
-                                 post w s pres' a s') : 
-  Spec w ⊑ While inv cond body k.
-Proof.
-  destruct w.
-  unfold wrefines.
-  refine_simpl.
-  destruct (semantics k).
-  destruct (semantics body).
-  eapply (Refinement _ _).
-  Unshelve. Focus 2.
-  refine_simpl.
-  eapply H2.
-  apply H1 in X.
-  destruct (cond s).
-  repeat split.
-  now destruct X.
-Admitted. *)
-
+  
 Lemma ifSpec {a} (cond : bool) (spec : PT _ a) (wt we : WhileL a) :
   (if cond then Spec spec ⊑ wt else Spec spec ⊑ we) ->
   (Spec spec ⊑ (if cond then wt else we)).
 Proof. destruct cond; intros; assumption. Qed.
-  
-(* Refine split at PT level *)
-Lemma refineSplitPT {a : Type} (w2 w4 : PT _ a) (w1 w3 : PT _ unit) 
-  (Step1 : Spec w1 ⊑ Spec w3)
-  (Step2 : Spec w2 ⊑ Spec w4) :
-  bind (Spec w1) (fun _ => Spec w2) ⊑ bind (Spec w3) (fun _ => Spec w4).
-Proof.
-  destruct w1, w2, w3, w4, Step1, Step2.
-  unshelve eapply (Refinement _ _ _); refine_simpl; eauto.
-Qed.
 
   
 End WHILE.

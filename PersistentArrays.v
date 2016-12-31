@@ -9,6 +9,18 @@ Require Import Heap.
 Require Import Refinement.
 Require Import Program.Tactics.
 Require Import Program.Equality.
+Require Import Coq.omega.Omega.
+
+
+Hint Extern 2 =>
+  match goal with
+    | [ H1 : (find ?s ?p = Some ?v1), H2 : (find ?s ?p = None) |- _ ] => rewrite H1 in H2; inversion H2
+    | [ H1 : (find ?s ?p = Some ?v1), H2 : (None = find ?s ?p) |- _ ] => rewrite H1 in H2; inversion H2
+    | [ H1 : (Some ?v1 = find ?s ?p), H2 : (find ?s ?p = None) |- _ ] => rewrite H1 in H2; inversion H2
+    | [ H1 : (Some ?v1 = find ?s ?p), H2 : (None = find ?s ?p) |- _ ] => rewrite H1 in H2; inversion H2
+  end.
+
+Hint Extern 2 (~ (_ = _)) => unfold not; intros; subst.
 
 (* Attempt following "A Persistent Union-Find Data Structure" *)
 
@@ -20,8 +32,7 @@ Inductive data : Type :=
   | Diff : nat -> nat -> Ptr -> data
   | ResultGet : option nat -> data.
 
-(* Updates an array at index i with v. I don't know why they used integers 
-instead of naturals (maybe to avoid clashes?) *)
+(* Updates an array at index i with v. *)
 Definition upd (f : nat -> nat) (i : nat) (v : nat) := 
   fun j => if beq_nat j i then v else f j.
 
@@ -43,6 +54,18 @@ Inductive pa_model (s : heap data) : Ptr -> (nat -> nat) -> Type :=
 
 Hint Constructors data pa_model.
 
+Lemma pa_model_find (s : heap data) (ptr : Ptr) (f : nat -> nat) :
+    pa_model s ptr f -> { x : data & find s ptr = Some x }.
+Proof. intros H; inversion H; subst; eauto. Qed.
+
+Hint Resolve pa_model_find.
+
+Lemma pa_model_find' (s : heap data) (ptr ptr' : Ptr) (f : nat -> nat) (i v : nat) :
+    pa_model s ptr f -> find s ptr = Some (Diff i v ptr') -> { x : data & find s ptr' = Some x }.
+Proof. intros H1 H2; inversion H1; subst; rewrite H2 in H; inversion H; subst; eauto. Qed.
+
+Hint Resolve pa_model_find'.
+
 (** SET **)
 
 Definition newRef (x : data) : WhileL data Ptr :=
@@ -59,13 +82,13 @@ Definition set (t : Ptr) (i : nat) (v : nat) : WhileL data Ptr :=
   | _ => Return _ t (* absurd! *)                      
   end).
 
-Definition setSpec (ptr : Ptr) (i : nat) (v : nat) : WhileL data Ptr.
-  refine (Spec _).
-  refine (Predicate (fun s => { f : nat -> nat & pa_model s ptr f}) _).
-  intros s [f H] newPtr s'.
-  apply (prod (pa_model s' newPtr (upd f i v))
-              (pa_model s' ptr f)).
-Defined.
+Definition setSpec (ptr : Ptr) (i : nat) (v : nat) : WhileL data Ptr :=
+  Spec ( Predicate
+   (fun s => { f : nat -> nat & pa_model s ptr f })
+   (fun s pres newPtr s' => match pres with
+                             | existT _ f _ => prod (pa_model s' newPtr (upd f i v))
+                                                   (pa_model s' ptr f)
+                           end )).
 
 (** Auxiliary lemmas about pa_model / upd. Taken from puf.v. **)
 
@@ -91,11 +114,7 @@ Hint Resolve upd_eq upd_eq_ext upd_fun.
 Lemma pa_model_fun : forall s p f, pa_model s p f -> forall f', pa_model s p f' -> f = f'.
 Proof.
   intros s ptr f HModel.
-  induction HModel; intros f' HModel'.
-  - destruct HModel'; rewrite e0 in e; inversion e; now subst.
-  - destruct HModel'; rewrite e0 in e; inversion e; subst.
-    apply upd_fun.
-    auto.
+  induction HModel; intros f' HModel'; destruct HModel'; context_simpl; auto.
 Qed.
 
 (* Application of pa_model_diff when "f" does not directly read as an upd *)
@@ -105,9 +124,7 @@ Lemma pa_model_diff_2 :
   pa_model s p' f' ->
   f = upd f' i v ->
   pa_model s p f. 
-Proof.
-  intros m p i v p' f f' pr1 pr2 pr3; subst; eapply pa_model_diff; eauto.
-Qed.
+Proof. intros; subst; eauto. Qed.
 
 (* Separation lemma: allocating a new pointer on the heap has no
    effect on existing PAs. *)
@@ -116,17 +133,11 @@ Lemma pa_model_sep' :
     find s t' = None -> 
     pa_model s t f -> pa_model (update s t' v) t f.
 Proof.
-  intros.
   intros; generalize dependent t'.
   induction X; intros.
   - apply pa_model_array.
     rewrite findNUpdate1 with (x := Some ((Arr f))); auto.
-    unfold not; intros; subst.
-    rewrite H in e; inversion e.
   - apply pa_model_diff with (p' := p'); auto.
-    apply findNUpdate1; auto.
-    unfold not; intros; subst.
-    rewrite H in e; inversion e.
 Qed.
 
 Inductive PAData : option data -> Prop :=
@@ -147,12 +158,10 @@ Proof.
   induction X; intros.
   - apply pa_model_array.
     rewrite findNUpdate1 with (x := Some ((Arr f))); auto.
-    unfold not; intros; subst.
-    rewrite e in H; auto.
+    unfold not; intros; subst; rewrite e in H; auto.
   - apply pa_model_diff with (p' := p'); auto.
     apply findNUpdate1; auto.
-    unfold not; intros; subst.
-    rewrite e in H; auto.
+    unfold not; intros; subst; rewrite e in H; auto.
 Qed.
 
 Lemma pa_model_alloc :
@@ -171,13 +180,12 @@ Lemma pa_model_copy_fresh :
 Proof.
   intros s p f H1.
   induction H1; intros.
-  - rewrite e in H; inversion H; subst.
-    intros; apply pa_model_array; auto.
-  - rewrite e in H; inversion H; subst.
-    intros; eapply pa_model_diff with (p' := p'); auto.
+  - context_simpl; auto.
+  - context_simpl. 
+    eapply pa_model_diff with (p' := p'); auto.
     apply pa_model_sep'; auto.
     destruct (find_eqdec s t); auto.
-    destruct e0; apply H0 in H2; exfalso; auto.    
+    destruct e; apply H0 in H2; exfalso; auto.    
 Qed.
 
 Hint Resolve pa_model_fun pa_model_diff_2 pa_model_sep'
@@ -189,7 +197,6 @@ Lemma setRefinement : forall ptr i v, wrefines (setSpec ptr i v) (set ptr i v).
 Proof.
   intros; unfold set, setSpec.
   READ ptr vInPtr.
-  inversion X0; eauto.
   destruct vInPtr as [ f | j vInJ t' | ].
   - NEW (Arr (upd f i v)) res.
     WRITE ptr (Diff i (f i) res).
@@ -264,16 +271,14 @@ Definition get :
   forall m, forall p, pa_valid m p -> 
   forall i, { v:Z | forall f, pa_model m p f -> v = f i }.
  *)
-Definition getSpec : Ptr -> nat -> WhileL data nat.
-  intros ptr i.
-  refine (Spec _). 
-  refine (Predicate (fun s => { f : nat -> nat & pa_model s ptr f}) _).
-  intros s [f H] v.
-  refine (fun s' => v = f i).
-Defined.
+Definition getSpec (ptr : Ptr) (i : nat) : WhileL data nat :=
+  Spec ( Predicate
+   (fun s => { f : nat -> nat & pa_model s ptr f })
+   (fun s pres v s' => match pres with
+                        | existT _ f _ => v = f i
+                      end )).  
 
-(* STARTS HERE: new get *)
-
+(* The list of pointers that together form a Persistent Array *)
 Inductive dist (s : heap data) : Ptr -> list Ptr -> Type :=
   | dist_sing : forall p f, find s p = Some (Arr f) -> dist s p (p :: nil)
   | dist_cons : forall p p' i v l, 
@@ -291,9 +296,7 @@ Hint Constructors InT.
 Lemma dist_fun : forall s ptr l1, dist s ptr l1 -> forall l2, dist s ptr l2 -> l1 = l2.
 Proof.
   intros s ptr l1 H.
-  induction H; intros.
-  - inversion X; context_simpl; auto.
-  - inversion X; context_simpl; apply f_equal; auto.
+  induction H; intros; inversion X; context_simpl; [ | apply f_equal ]; auto.
 Qed.
 
 Lemma dist_InT : forall s ptr l, dist s ptr l -> InT ptr l.
@@ -302,17 +305,7 @@ Proof. intros; induction X; auto. Qed.
 Hint Resolve dist_fun dist_InT.
 
 Lemma dist_sepT : forall s ptr l, dist s ptr l -> forall ptr', (InT ptr' l -> False) -> forall v, dist (update s ptr' v) ptr l.
-Proof.
-  intros s ptr l H.
-  induction H; intros.
-  - simpl; apply dist_sing with (f := f); rewrite findNUpdate; auto.
-    unfold not; intros HH; subst; auto.
-  - eapply dist_cons.
-    erewrite findNUpdate; eauto 2.
-    unfold not; intros HH; subst.
-    apply H0; auto.
-    apply IHdist; unfold not; intros HH; apply H0; now right.
-Qed.    
+Proof. intros s ptr l H; induction H; intros; [ | eapply dist_cons ]; eauto. Qed.    
 
 Lemma pa_model_dist : forall s ptr f, pa_model s ptr f -> { l : list Ptr & dist s ptr l }.
 Proof. intros; induction X; eauto. destruct IHX; eauto. Qed.
@@ -326,7 +319,7 @@ Lemma pa_model_sep :
     (InT ptr' l -> False) ->
     pa_model (update s ptr' v) ptr f.
 Proof.
-  intros s f v ptr ptr' l HPA Hdist. generalize dependent ptr'. generalize dependent v. generalize dependent l.
+  intros s f v ptr ptr' l HPA Hdist; generalize dependent ptr'; generalize dependent v; generalize dependent l.
   induction HPA; intros.
   - apply pa_model_array; rewrite findNUpdate; auto.
     unfold not; intros; subst.
@@ -349,27 +342,24 @@ Lemma pa_model_sep_copy :
     find s ptr = Some v -> 
     pa_model (update s ptr' v) ptr' f.
 Proof.
-  intros s f v ptr ptr' l HPA Hdist HFind. generalize dependent ptr'. generalize dependent v. generalize dependent l.
-  induction HPA; intros.
-  - apply pa_model_array; rewrite e in H; now rewrite findUpdate.
-  - rewrite e in H; apply pa_model_diff with (p' := p'). 
+  intros s f v ptr ptr' l HPA Hdist HFind; generalize dependent ptr'; generalize dependent v; generalize dependent l.
+  induction HPA; intros; rewrite e in H.
+  - apply pa_model_array; now rewrite findUpdate.
+  - apply pa_model_diff with (p' := p').
     rewrite findUpdate; auto.
     assert (Ha : pa_model s p' f) by assumption.
     apply pa_model_dist in HPA.
     destruct HPA.
     eapply pa_model_sep; eauto.
-    assert (Ha1 : l = p :: x).
-    inversion Hdist; subst; rewrite e in H0; inversion H0; subst.
-    apply f_equal; eapply dist_fun; eauto.
-    subst; intros; auto.
+    assert (Ha1 : l = p :: x) by eauto.
+    inversion Hdist; rewrite e in H0; inversion H0; subst; eauto.
 Qed.
 
 Lemma dist_wf : forall s p1 l, dist s p1 l -> forall p2, p1 <> p2 -> InT p2 l ->
                       { l' : list Ptr & prod (dist s p2 l') (length l' < length l) }.
 Proof.
   intros s p1 l Hdist p2 Heq HIn.
-  destruct (M.E.eq_dec p1 p2).
-  contradiction.
+  destruct (M.E.eq_dec p1 p2); try contradiction.
   induction Hdist; intros.
   - inversion HIn; subst; exfalso; now apply n.
   - inversion HIn; subst.
@@ -377,20 +367,11 @@ Proof.
     destruct (M.E.eq_dec p' p2); subst; eauto.
     assert ({l' : list Ptr & (dist s p2 l' * (Datatypes.length l' < Datatypes.length l))%type}).
     apply IHHdist; auto.
-    destruct X.
-    exists x.
-    destruct p0; split; auto.
-    simpl.
-    now apply Nat.lt_lt_succ_r.
+    destruct X as [x [H1 H2]]; eexists; split; eauto; simpl; omega.
 Qed.
 
 Lemma cons_contra : forall {A} (x : A) l, l <> x :: l.
-Proof.
-  intros.
-  induction l.
-  - unfold not; intros HInv; inversion HInv.
-  - unfold not; intros HInv; inversion HInv; contradiction.
-Qed.
+Proof. intros; induction l; unfold not; intros HInv; inversion HInv; contradiction. Qed.
     
 Lemma dist_no_loop : forall s p l, dist s p (p :: l) -> (InT p l -> False).
 Proof.
@@ -398,19 +379,13 @@ Proof.
   dependent induction H.
   - unfold not; intros HInv; inversion HInv; subst.
   - unfold not; intros HH; subst.
-    destruct (M.E.eq_dec p' p).
-    subst.
+    destruct (M.E.eq_dec p' p); subst.
     assert (Ha : l = p :: l).
-    eapply dist_fun; eauto.
-    eapply cons_contra; apply Ha. 
+    eapply dist_fun; eauto. eauto.
     assert (Ha : dist s p (p :: l)) by eauto.
-    destruct (dist_wf H n HH).
-    destruct p0.
-    assert (Ha1 : x = p :: l).
-    eapply dist_fun; eauto.
-    subst.
-    simpl in l0.
-    eapply Nat.nlt_succ_diag_l; apply l0.
+    destruct (dist_wf H n HH) as [x [H1 H2]].
+    assert (Ha1 : x = p :: l) by eauto.
+    subst; simpl in *; omega.
 Qed.
 
 (* When a pointer that points to (Diff i v t'), can be updated to whatever t'
@@ -426,20 +401,11 @@ Proof.
   apply pa_model_dist in HP2.
   destruct HP2.
   eapply pa_model_sep_copy; eauto.
-
   assert (Ha1 : pa_model s p1 (upd f i v)) by assumption.
   apply pa_model_dist in HP1.
   destruct HP1.
-  assert (Ha2 : x0 = p1 :: x).
-  inversion d0; subst.
-  inversion d0; subst.
-  rewrite H0 in HFind1; inversion HFind1.
-  inversion X.
-  rewrite H in HFind1; inversion HFind1; subst.
-  apply f_equal.
-  eapply dist_fun; eauto.
-  subst.
-  eapply dist_no_loop. apply d0.
+  assert (Ha2 : x0 = p1 :: x) by eauto.
+  subst; eapply dist_no_loop; eassumption.
 Qed.
 
 Lemma pa_dist_sep_padata :
@@ -447,18 +413,14 @@ Lemma pa_dist_sep_padata :
     ~ (PAData (find s t')) ->
     dist s t l -> dist (update s t' v) t l.
 Proof.
-  intros.
   intros; generalize dependent t'.
   induction X; intros.
   - eapply dist_sing.
     rewrite findNUpdate1 with (x := Some ((Arr f))); auto.
-    unfold not; intros; subst.
-    rewrite e in H; auto.
-  - eapply dist_cons with (p' := p'); eauto.
-    apply findNUpdate1; auto.
-    unfold not; intros; subst.
-    rewrite e in H; eauto.
-    apply e.
+    unfold not; intros; subst; rewrite e in H; auto.
+  - eapply dist_cons with (p' := p'); eauto 2.
+    apply findNUpdate1; eauto 2.
+    unfold not; intros; subst; rewrite e in H; eauto.
 Qed.
 
 Hint Resolve dist_sepT pa_model_dist pa_model_sep pa_model_sep_copy.
@@ -468,21 +430,14 @@ Lemma dist_InT_find : forall ptr1 s l, dist s ptr1 l -> forall ptr2, InT ptr2 l 
                                   { v : data & find s ptr2 = Some v }.
 Proof.
   intros ptr1 s l Hdist.
-  induction Hdist; intros ptr2 HInT.
-  - inversion HInT; subst; eauto.
-    inversion H0.
-  - inversion HInT; subst; eauto.
+  induction Hdist; intros ptr2 HInT; inversion HInT; subst; eauto; inversion H0.
 Qed.
 
 Lemma dist_InT_find_padata :
   forall ptr1 s l, dist s ptr1 l -> forall ptr2, InT ptr2 l -> PAData (find s ptr2).
 Proof.
   intros ptr1 s l Hdist.
-  induction Hdist; intros ptr2 HInT.
-  - inversion HInT; subst. rewrite e; auto.
-    inversion H0.
-  - inversion HInT; subst; eauto.
-    rewrite e; auto.
+  induction Hdist; intros ptr2 HInT; inversion HInT; subst; try (rewrite e; auto); eauto; inversion H0.
 Qed.
 
 Hint Resolve dist_InT_find dist_InT_find_padata.
@@ -537,14 +492,13 @@ Proof.
   intros.
   unfold get, getSpec.
   READ ptr vInPtr.
-  inversion X0; subst; eauto.
   NEW vInPtr t.
   NEW (ResultGet None) done.
   WHILE (Inv ptr t done i) (fun s : S data => negb (data_get_eqb_some (find s done))); unfold Inv.
   - refine_simpl.
     exists s1.
     repeat split; auto.
-    * apply pa_model_sep'; eauto.
+    * apply pa_model_sep'; eauto. 
       destruct (find_eqdec (update s0 t vInPtr) done); eauto;
       destruct e; exfalso; eapply n; eauto.
     * assert (Ha1 : pa_model (update s0 t vInPtr) ptr s1).
@@ -560,18 +514,13 @@ Proof.
       destruct X0.
       exists x; split. 
       repeat apply dist_sepT; auto.
-      + intros; assert (Ha2 : { v : data & find s0 t = Some v }) by eauto.
-        destruct Ha2 as [v HFind]; apply n0 in HFind; now apply HFind. 
-      + intros; assert (Ha2 : { v : data & find s0 done = Some v }) by eauto.
-        destruct Ha2 as [v HFind].
-        rewrite <- findNUpdate with (p' := t) (v := vInPtr) in HFind. 
-        apply n in HFind; now apply HFind.
-        unfold not; intros; subst.
-        apply n0 in HFind; now apply HFind.
-      + intros; assert (Ha2 : { v : data & find s0 t = Some v }) by eauto.
-        destruct Ha2 as [v HFind]; apply n0 in HFind; now apply HFind. 
+      + intro H; destruct (dist_InT_find d H) as [v HFind]; now apply (n0 _ _ HFind).
+      + intro H; destruct (dist_InT_find d H) as [v HFind].
+        rewrite <- findNUpdate with (p' := t) (v := vInPtr) in HFind.
+        now apply (n _ _ HFind).
+        unfold not; intros; subst; now apply (n0 _ _ HFind).
+      + intro H; destruct (dist_InT_find d H) as [v HFind]; now apply (n0 _ _ HFind).
   - READ t vInT.
-    inversion p; eauto.
     destruct vInT.
     WRITE done (ResultGet (Some (n i))).
     destruct s3; eauto.
@@ -595,25 +544,21 @@ Proof.
         inversion p0; rewrite e0 in H; inversion H; subst. 
         unfold upd; now rewrite <- Heqb.
       + READ p vInT'.
-        inversion p0; subst; rewrite e in H; inversion H; subst.
-        inversion X; subst; eauto.
         WRITE t vInT'.
-        RETURN tt; eauto.
+        RETURN tt.
         inversion p0; subst; rewrite e1 in H; inversion H; subst; clear H.
-        exists f0.
-        repeat split. eauto 2.
+        exists f0; repeat split.
+        eauto 2.
         eapply pa_model_sep; eauto 2; now destruct (p1 _ X0).
         destruct (p1 _ X0); rewrite <- e; unfold upd; now rewrite <- Heqb. 
-        exists s2.
-        split; auto; apply dist_sepT; auto.
+        exists s2; split; auto.
         destruct s3. 
         left; rewrite findNUpdate; eauto 1.
-        rewrite e; repeat apply f_equal; unfold upd; now rewrite <- Heqb.
+        rewrite e; repeat apply f_equal; unfold upd; now rewrite <- Heqb. 
         unfold not; intros; subst; rewrite e1 in e; inversion e.
         right; rewrite findNUpdate; eauto 1; unfold not; intros; subst;
         rewrite e1 in e; inversion e.
-      * RETURN tt; eauto.
-        inversion p; subst; rewrite e in H; inversion H.
+      * RETURN tt; inversion p; subst; rewrite e in H; inversion H.
   - READ done vInDone.
     destruct s3; eauto.
     destruct vInDone.
@@ -629,107 +574,12 @@ Proof.
         destruct (find_eqdec (update s5 t vInPtr) done).
         rewrite e1 in HInv; inversion HInv.
         destruct e1;  apply n0 in H; now apply H.
-        apply pa_model_sep'.
-        destruct (find_eqdec s5 t).
-        assumption.
-        destruct e1; exfalso; apply n1 in H; now apply H.
-        assumption.
+        apply pa_model_sep'; auto.
+        destruct (find_eqdec s5 t); [ | destruct e1; exfalso; apply n1 in H ]; auto.
         now destruct (p0 s6 Ha).
         rewrite e0 in e; inversion e.
       + RETURN 0; rewrite e in i0; inversion i0.
 Qed.
-
-(* ENDS HERE: new get *)
-
-(* get (using a loop) refinement 
-Lemma getRefinement :  forall ptr i, wrefines (getSpec ptr i) (get ptr i).
-Proof.
-  intros.
-  unfold get, getSpec.
-  READ ptr vInPtr.
-  inversion X0; subst; eauto.
-  apply newSpec'; intro t.
-  apply newSpec'; intro done.
-
-
-  apply whileSpec.
-  - refine_simpl.
-    inversion X0; subst.
-    rewrite e1 in H; inversion H; subst; clear H.
-    eexists.
-    apply pa_model_array.
-    rewrite findNUpdate.
-    rewrite findUpdate.
-    reflexivity.
-    apply n with (x := (Arr s1)).
-    now rewrite findUpdate.
-    rewrite e1 in H; inversion H; subst; clear H.
-    eexists.
-    eapply pa_model_diff.
-    rewrite findNUpdate.
-    rewrite findUpdate.
-    reflexivity.
-    eapply n.
-    now rewrite findUpdate.
-    apply pa_model_sep'.
-    destruct (find_eqdec (update s0 t (Diff i0 v p')) done); auto.
-    destruct e; exfalso; eapply n; eauto.
-    apply pa_model_sep'.
-    destruct (find_eqdec s0 t); auto.
-    destruct e; exfalso; eapply n0; eauto.
-    apply X.
-    eapply n; now rewrite findUpdate.
-    eauto.
-  - READ t vInT.
-    inversion X0; subst; eauto.
-    destruct vInT.
-    WRITE done (ResultGet (Some (n i))).
-    RETURN tt; eauto.
-    destruct (Nat.eq_dec i n).
-    subst.
-    rewrite PeanoNat.Nat.eqb_refl.
-    WRITE done (ResultGet (Some n0)).
-    RETURN tt; eauto.
-    inversion X0; subst; rewrite e0 in H; inversion H; subst; clear H.
-    exists (upd f i0 v).
-    apply pa_model_diff with (p' := p').
-    rewrite findNUpdate. apply e0. auto.
-    apply pa_model_sep_padata; auto.
-    unfold not; intros H; rewrite X in H; inversion H.
-    apply Nat.eqb_neq in n1.
-    rewrite n1.
-    READ p vInT'.
-    inversion X0; subst; rewrite e in H; inversion H; subst; clear H.
-    inversion X1; eauto.
-    WRITE t vInT'.
-    RETURN tt; eauto.
-    inversion X0; subst; rewrite e1 in H; inversion H; subst; clear H.
-    inversion X1; subst; rewrite e0 in H; inversion H; subst; clear H.
-    eauto.
-    exists (upd f0 i2 v0).
-    eapply pa_model_diff.
-    now rewrite findUpdate.
-    admit. (* seems to follow from X2, if t <> p'0 *)
-    RETURN tt; eauto.
-    RETURN tt; eauto.
-  - READ done vInDone.
-    destruct vInDone.
-    Focus 3.
-    destruct o.
-    RETURN n.
-    rewrite X in e; inversion e; subst; clear e.
-    admit.
-    Set Ltac Debug.
-    RETURN 0.
-    rewrite X in i0; inversion i0.
-    RETURN 0.
-    rewrite X in i0; inversion i0.
-    RETURN 0.
-    rewrite X in i0; inversion i0.
-    RETURN 0.
-    rewrite X in i0; inversion i0.
-Admitted.
-*)
 
 (* A (non-executable) implementation fulfilling only partial-correctness,
    using a recursive approach *)
@@ -788,17 +638,6 @@ Proof.
   - RETURN 0; inversion X; rewrite e in H; inversion H.
   - RETURN 0; inversion X; rewrite e in H; inversion H.
 Admitted.
-
-(* attempt at defining recursion *)
-Inductive WhileL' (I : Type) (O : I -> Type) (a : Type) : Type :=
-  | New'    : forall v, v -> (Ptr -> WhileL' O a) -> WhileL' O a
-  | Read'   : forall v, Ptr -> (v -> WhileL' O a) -> WhileL' O a
-  | Write'  : forall v, Ptr -> v -> WhileL' O a  -> WhileL' O a
-  | Spec'   : PT a -> WhileL' O a
-  | Call    : forall (i : I), (O i -> WhileL' O a) -> WhileL' O a
-  | Return' : a -> WhileL' O a.
-
-(** STOP HERE **)
 
 
 
