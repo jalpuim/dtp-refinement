@@ -11,6 +11,13 @@ Require Import Program.Tactics.
 Require Import Program.Equality.
 Require Import Coq.omega.Omega.
 
+(************************************************************
+
+                PERSISTENT ARRAYS CASE-STUDY 
+
+*************************************************************)
+
+
 (** Some extra small automation **)
 
 Hint Extern 2 =>
@@ -30,10 +37,11 @@ Hint Extern 2 (~ (_ = _)) => unfold not; intros; subst.
 Set Implicit Arguments.
 Require Export Wf_nat.
 
+(* The possible data types present in the heap *)
 Inductive data : Type :=
   | Arr : (nat -> nat) -> data
   | Diff : nat -> nat -> Ptr -> data
-  | ResultGet : option nat -> data.
+  | ResultGet : option nat -> data. (* used in the Get function *)
 
 (* Updates an array at index i with v. *)
 Definition upd (f : nat -> nat) (i : nat) (v : nat) := 
@@ -355,8 +363,8 @@ Proof.
     subst; simpl in *; omega.
 Qed.
 
-(* When a pointer that points to (Diff i v t'), can be updated to whatever t'
-   points to *)
+(* A pointer that points to a valid (Diff i v t'), 
+   will still be valid when updated to whatever t' points to *)
 Lemma pa_model_desc : forall s p1 f i v, pa_model s p1 (upd f i v) ->
                                     forall p2 v', pa_model s p2 f ->
                                              find s p1 = Some (Diff i v p2) ->
@@ -375,6 +383,8 @@ Proof.
   subst; eapply dist_no_loop; eassumption.
 Qed.
 
+(* Separation lemma: a pointer that does not point to a structure
+   of a PA, can be safely updated without affecting existing PAs  *)
 Lemma pa_dist_sep_padata :
   forall s t l v t',
     ~ (PAData (find s t')) ->
@@ -393,18 +403,22 @@ Qed.
 Hint Resolve dist_sepT pa_model_dist pa_model_sep pa_model_sep_copy.
 Hint Resolve pa_model_desc pa_dist_sep_padata.
 
-Lemma dist_InT_find : forall ptr1 s l, dist s ptr1 l -> forall ptr2, InT ptr2 l ->
-                                  { v : data & find s ptr2 = Some v }.
-Proof.
-  intros ptr1 s l Hdist.
-  induction Hdist; intros ptr2 HInT; inversion HInT; subst; eauto; inversion H0.
-Qed.
-
+(* If a pointer belongs to the indirection list of an array,
+   it must point to a PAData. *)
 Lemma dist_InT_find_padata :
   forall ptr1 s l, dist s ptr1 l -> forall ptr2, InT ptr2 l -> PAData (find s ptr2).
 Proof.
   intros ptr1 s l Hdist.
   induction Hdist; intros ptr2 HInT; inversion HInT; subst; try (rewrite e; auto); eauto; inversion H0.
+Qed.
+
+(* If a pointer belongs to the indirection list of an array,
+   it must point to a valid pointer in the heap *)
+Lemma dist_InT_find : forall ptr1 s l, dist s ptr1 l -> forall ptr2, InT ptr2 l ->
+                                  { v : data & find s ptr2 = Some v }.
+Proof.
+  intros ptr1 s l Hdist.
+  induction Hdist; intros ptr2 HInT; inversion HInT; subst; eauto; inversion H0.
 Qed.
 
 Hint Resolve dist_InT_find dist_InT_find_padata.

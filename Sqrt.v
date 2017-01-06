@@ -10,6 +10,12 @@ Require Import Refinement.
 Require Import Program.Tactics.
 Require Import Program.Equality.
 
+(************************************************************
+
+                      SQUARE ROOT EXAMPLE
+
+*************************************************************)
+
 Definition square : nat -> nat := fun n => n * n.
 
 Definition sqrtSpec (ptr : Ptr) : WhileL nat nat.

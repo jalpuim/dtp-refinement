@@ -5,13 +5,10 @@ Require Import Refinement.
 Require Import Heap.
 (************************************************************
 
-                             SWAP EXAMPLE
+                        SWAP EXAMPLE
 
 *************************************************************)
 
-(** Just a brief example showing how the language currently looks like 
-    Contains some testing definitions to be moved elsewhere once proven.
-**)
 Definition SWAP {a : Type} (p q : Ptr): WhileL a unit := 
   Spec (Predicate
           (fun s => prod {x : a | find s p = Some x} {y : a | find s q = Some y})
