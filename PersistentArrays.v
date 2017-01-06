@@ -11,6 +11,7 @@ Require Import Program.Tactics.
 Require Import Program.Equality.
 Require Import Coq.omega.Omega.
 
+(** Some extra small automation **)
 
 Hint Extern 2 =>
   match goal with
@@ -22,7 +23,9 @@ Hint Extern 2 =>
 
 Hint Extern 2 (~ (_ = _)) => unfold not; intros; subst.
 
-(* Attempt following "A Persistent Union-Find Data Structure" *)
+(*******************************************************************************
+  **** Infrastructure following "A Persistent Union-Find Data Structure" ****
+*******************************************************************************)
 
 Set Implicit Arguments.
 Require Export Wf_nat.
@@ -65,30 +68,6 @@ Lemma pa_model_find' (s : heap data) (ptr ptr' : Ptr) (f : nat -> nat) (i v : na
 Proof. intros H1 H2; inversion H1; subst; rewrite H2 in H; inversion H; subst; eauto. Qed.
 
 Hint Resolve pa_model_find'.
-
-(** SET **)
-
-Definition newRef (x : data) : WhileL data Ptr :=
-  New x (fun ptr => Return _ ptr).
-
-(* The original set implementation (i.e. no path compression), 
-presented in Page 3 *)
-Definition set (t : Ptr) (i : nat) (v : nat) : WhileL data Ptr :=
-  Read t (fun vInT =>
-  match vInT with
-  | Arr f => New (Arr (upd f i v))
-                (fun (res : Ptr) => Write t (Diff i (f i) res) (Return _ res))
-  | Diff _ _ _ => newRef (Diff i v t)
-  | _ => Return _ t (* absurd! *)                      
-  end).
-
-Definition setSpec (ptr : Ptr) (i : nat) (v : nat) : WhileL data Ptr :=
-  Spec ( Predicate
-   (fun s => { f : nat -> nat & pa_model s ptr f })
-   (fun s pres newPtr s' => match pres with
-                             | existT _ f _ => prod (pa_model s' newPtr (upd f i v))
-                                                   (pa_model s' ptr f)
-                           end )).
 
 (** Auxiliary lemmas about pa_model / upd. Taken from puf.v. **)
 
@@ -190,8 +169,57 @@ Qed.
 
 Hint Resolve pa_model_fun pa_model_diff_2 pa_model_sep'
              pa_model_sep_padata pa_model_copy_fresh.
-  
-(** set refinement **)
+
+Hint Extern 2 =>
+  match goal with
+    | [ HH : (find ?s ?p = Some ?v1) +
+            (find ?s ?p = Some ?v2) |- ~ PAData (find ?s ?p) ] =>
+      destruct HH as [HH | HH]; rewrite HH; unfold not; intro HInv; inversion HInv 
+  end.
+
+(*******************************************************************************
+                            **** INIT ****
+*******************************************************************************)
+
+Definition initSpec (n : nat) (f : nat -> nat) : WhileL data Ptr := 
+  Spec (Predicate (fun s => True)
+                  (fun s pres v s' => prod (forall p' x, find s p' = Some x -> p' <> v)
+                                          (pa_model s' v f))).
+
+Definition newRef (x : data) : WhileL data Ptr :=
+  New x (fun ptr => Return _ ptr).
+
+Definition init (n : nat) (f : nat -> nat) : WhileL data Ptr := newRef (Arr f).
+
+Lemma initRefinement : forall n f, wrefines (initSpec n f) (init n f).
+Proof.
+  intros.
+  NEW (Arr f) t.
+  RETURN t; eauto.
+Qed.
+
+(*******************************************************************************
+                             **** SET ****
+*******************************************************************************)
+
+(* The original set implementation (i.e. no path compression), 
+presented in Page 3 *)
+Definition set (t : Ptr) (i : nat) (v : nat) : WhileL data Ptr :=
+  Read t (fun vInT =>
+  match vInT with
+  | Arr f => New (Arr (upd f i v))
+                (fun (res : Ptr) => Write t (Diff i (f i) res) (Return _ res))
+  | Diff _ _ _ => newRef (Diff i v t)
+  | _ => Return _ t (* absurd! *)                      
+  end).
+
+Definition setSpec (ptr : Ptr) (i : nat) (v : nat) : WhileL data Ptr :=
+  Spec ( Predicate
+   (fun s => { f : nat -> nat & pa_model s ptr f })
+   (fun s pres newPtr s' => match pres with
+                             | existT _ f _ => prod (pa_model s' newPtr (upd f i v))
+                                                   (pa_model s' ptr f)
+                           end )).
 
 Lemma setRefinement : forall ptr i v, wrefines (setSpec ptr i v) (set ptr i v).
 Proof.
@@ -212,73 +240,12 @@ Proof.
   - RETURN ptr; inversion X; subst; context_simpl.
 Qed.
 
-(*** GET ***)
-(* The adapted spec from Ch.4 *)
-(*
-Definition get : 
-  forall m, forall p, pa_valid m p -> 
-  forall i, { v:Z | forall f, pa_model m p f -> v = f i }.
-*)
+(*******************************************************************************
+        **** Infrastructure for proving more elaborated functions ****
+*******************************************************************************)
 
-Definition data_get_eqb_some (h : option data) : bool :=
-  match h with
-    | Some (ResultGet (Some x)) => true
-    | _ => false
-  end.
-
-(*
-Definition get (ptr : Ptr) : WhileL unit :=
-  t <- ptr
-  done <- newRef Nothing
-  while done == Nothing  {
-    x <- read t
-    match x with
-      | Array => write done Just (a.i)
-      | Diff (j, v, t') => if i == j 
-                           then write done (Just v) 
-                           else read t' >>= \x -> write t x
-  }
-*)
-
-Definition get (ptr : Ptr) (i : nat) : WhileL data nat.
-refine (
-  Read ptr (fun vInPtr =>
-  New vInPtr (fun t =>
-  New (ResultGet None) (fun done =>
-  While (fun s' s => prod ({ f : nat -> nat & pa_model s t f })
-                  (prod (t <> done) ({ x : option nat & find s done = Some (ResultGet x) })))
-        (fun s => negb (data_get_eqb_some (find s done)))
-        (Read t (fun vInT => _ )) (* the body is refined below *)
-        (Read done (fun vInDone =>
-         match vInDone with
-           | ResultGet (Some a) => Return _ a
-           | _ => Return _ 0 (* absurd *)
-         end)))))).
-(* body of the loop *)
-destruct vInT as [ f | j v t' | ].
-refine (Write done (ResultGet (Some (f i))) (Return _ tt)).
-refine (if Nat.eqb i j
-        then _
-        else _).
-refine (Write done (ResultGet (Some v)) (Return _ tt)).
-refine (Read t' (fun vInT' => Write t vInT' (Return _ tt))).
-refine (Return _ tt). (* absurd: t will never point to a result *)
-Defined.
-
-(* The adapted spec from Ch.4 *)
-(*
-Definition get : 
-  forall m, forall p, pa_valid m p -> 
-  forall i, { v:Z | forall f, pa_model m p f -> v = f i }.
- *)
-Definition getSpec (ptr : Ptr) (i : nat) : WhileL data nat :=
-  Spec ( Predicate
-   (fun s => { f : nat -> nat & pa_model s ptr f })
-   (fun s pres v s' => match pres with
-                        | existT _ f _ => v = f i
-                      end )).  
-
-(* The list of pointers that together form a Persistent Array *)
+(* The list of pointers that together form a Persistent Array, hinting to
+   a well-formed relation on pointers *)
 Inductive dist (s : heap data) : Ptr -> list Ptr -> Type :=
   | dist_sing : forall p f, find s p = Some (Arr f) -> dist s p (p :: nil)
   | dist_cons : forall p p' i v l, 
@@ -442,6 +409,45 @@ Qed.
 
 Hint Resolve dist_InT_find dist_InT_find_padata.
 
+(*******************************************************************************
+                             **** GET ****
+*******************************************************************************)
+
+(* The original spec from Ch.4 *)
+(*
+Definition get : 
+  forall m, forall p, pa_valid m p -> 
+  forall i, { v:Z | forall f, pa_model m p f -> v = f i }.
+*)
+
+Definition data_get_eqb_some (h : option data) : bool :=
+  match h with
+    | Some (ResultGet (Some x)) => true
+    | _ => false
+  end.
+
+(*
+Definition get (ptr : Ptr) : WhileL unit :=
+  t <- ptr
+  done <- newRef Nothing
+  while done == Nothing  {
+    x <- read t
+    match x with
+      | Array => write done Just (a.i)
+      | Diff (j, v, t') => if i == j 
+                           then write done (Just v) 
+                           else read t' >>= \x -> write t x
+  }
+*)
+
+Definition getSpec (ptr : Ptr) (i : nat) : WhileL data nat :=
+  Spec ( Predicate
+   (fun s => { f : nat -> nat & pa_model s ptr f })
+   (fun s pres v s' => match pres with
+                        | existT _ f _ => v = f i
+                      end )).  
+
+
 (* Given the root pointer "ptr" and an auxiliary traversal pointer "t",
   "t" points to a persistent array (modelled by some f) such that:
    1. (f i) is the same as the function modelled by the original "ptr"
@@ -455,7 +461,7 @@ Definition Inv ptr t done i si s :=
           (sum (find s done = Some (ResultGet (Some (f i))))
                (find s done = Some (ResultGet None))))))) }.
 
-Definition getNewInv (ptr : Ptr) (i : nat) : WhileL data nat. 
+Definition get (ptr : Ptr) (i : nat) : WhileL data nat. 
 refine (
   Read ptr (fun vInPtr =>
   New vInPtr (fun t =>
@@ -479,15 +485,7 @@ refine (Read t' (fun vInT' => Write t vInT' (Return _ tt))).
 refine (Return _ tt). (* absurd: t will never point to a result *)
 Defined.
 
-Hint Extern 2 =>
-  match goal with
-    | [ HH : (find ?s ?p = Some ?v1) +
-            (find ?s ?p = Some ?v2) |- ~ PAData (find ?s ?p) ] =>
-      destruct HH as [HH | HH]; rewrite HH; unfold not; intro HInv; inversion HInv 
-  end.
-
-(* get (using a loop) refinement *)
-Lemma getRefinementNewInv :  forall ptr i, wrefines (getSpec ptr i) (getNewInv ptr i).
+Lemma getRefinement :  forall ptr i, wrefines (getSpec ptr i) (get ptr i).
 Proof.
   intros.
   unfold get, getSpec.
@@ -580,65 +578,6 @@ Proof.
         rewrite e0 in e; inversion e.
       + RETURN 0; rewrite e in i0; inversion i0.
 Qed.
-
-(* A (non-executable) implementation fulfilling only partial-correctness,
-   using a recursive approach *)
-
-Definition get' (ptr : Ptr) (i : nat) : WhileL data nat := 
-  Read ptr
-       (fun ptrVal => match ptrVal with
-                       | Arr f => Return _ (f i)
-                       | Diff j v ptr' =>
-                         if beq_nat i j
-                         then Return _ v
-                         else getSpec ptr' i
-                       | _ => Return _ 0 (* absurd *)
-                     end).
-
-Lemma getRefinement' : forall ptr i, getSpec ptr i ⊑ get' ptr i.
-Proof.
-  intros.
-  READ ptr vInPtr.
-  inversion X0; subst; simpl in *; eauto.
-  destruct vInPtr as [ | j v ptr' | | ]; simpl.
-  (* Original persistent array *)
-  - apply returnStep; unfold_refinements; refine_simpl.
-    inversion X; subst; auto.
-    rewrite e in H; inversion H; now subst.
-    rewrite e in H; inversion H.
-  (* Single modification of other persistent array *)
-  - destruct (eq_nat_dec i j).
-    + subst.
-      rewrite <- beq_nat_refl.
-      apply returnStep; unfold_refinements; refine_simpl.
-      inversion X.
-      subst; simpl in *.
-      rewrite e in H; inversion H.
-      subst; simpl in *.
-      unfold upd.
-      rewrite H in e; inversion e; subst.
-      subst; now rewrite <- beq_nat_refl.
-    + rewrite <- PeanoNat.Nat.eqb_neq in n.
-      rewrite n; unfold getSpec, wrefines; simpl.
-      eapply (Refinement _ _ _).
-      Unshelve. Focus 2.
-      unfold subset; simpl. 
-      intros s [[f H1] H2].
-      inversion H1; rewrite H in H2; inversion H2.
-      subst; clear H2.
-      now exists f0.
-      refine_simpl.
-      inversion X0; rewrite e in H; inversion H.
-      subst; clear H.
-      unfold upd; rewrite n.
-      destruct X0. admit.
-      assert (Ha : find s p = Some (Diff i1 v p'0)). apply e0.
-      rewrite e in Ha; inversion Ha; subst; clear Ha; simpl in *.
-      admit. (* looks like we could prove this using X... *)
-  - RETURN 0; inversion X; rewrite e in H; inversion H.
-  - RETURN 0; inversion X; rewrite e in H; inversion H.
-Admitted.
-
 
 
 
