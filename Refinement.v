@@ -52,6 +52,38 @@ Notation "[ p , q ]" := (Predicate p q) (at level 70) : type_scope.
 Ltac refine_simpl  := unfold pre, post, K, Ka, subset in *; intros; simpl in *.
 Ltac destruct_pt a := refine_simpl; destruct_all (PT a).
 
+Definition Pred (A : Type) : Type := A -> Type.
+
+Definition semantics {A : Type} (pt : PT A) : Pred (A * S ) -> Pred S
+  := fun P s =>
+      {p : pre pt s
+       & forall s' v, post pt s p v s' -> P (v, s')}.
+
+Lemma soundness1 {a : Type} (pt1 pt2 : PT a) :
+  (pt1 ⊏ pt2) -> forall P, semantics pt1 P ⊂ semantics pt2 P.
+  Proof.
+    intros [H1 H2] P1 s [pre1 post1].
+    exists (H1 s pre1).
+    intros; apply post1; now apply H2.
+  Qed.
+
+Lemma soundness2 {a : Type} : forall (pt1 pt2 : PT a),
+  (forall P, semantics pt1 P ⊂ semantics pt2 P) -> (pt1 ⊏ pt2).
+Proof.
+  intros [Pre1 Post1] [Pre2 Post2] H.
+  set (Q := fun s pre => H (fun vs => Post1 s pre (fst vs) (snd vs)) s (existT _ pre (fun _ _ q => q))).
+  eapply Refinement.
+  Unshelve. Focus 2.
+  unfold subset; simpl in *; now apply Q.
+  intros s x v s' p; simpl in *; destruct (Q s x) as [p1 p2];
+     now (apply p2).
+  Qed.
+
+Theorem soundness {A : Type} : forall (pt1 pt2 : PT A),
+  (pt1 ⊏ pt2 -> (forall P, semantics pt1 P ⊂ semantics pt2 P))
+  * ((forall P, semantics pt1 P ⊂ semantics pt2 P) -> pt1 ⊏ pt2).
+  intros; split; [ now eapply soundness1 | eapply soundness2].
+  Qed.
 
 (*******************************************************************************
              ****   Primitive Predicate Transformers ****
@@ -170,5 +202,6 @@ Definition SeqPT {a b : Type} (pt1 : PT a) (pt2 : PT b) : PT b :=
 
 
 Notation "pt1 ;; pt2" := (SeqPT pt1 pt2) (at level 52, right associativity).
+
 
 End Refinement.
