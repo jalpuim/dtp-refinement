@@ -38,10 +38,10 @@ Set Implicit Arguments.
 Require Export Wf_nat.
 
 (* The possible data types present in the heap *)
-Inductive data : Type :=
-  | Arr : (nat -> nat) -> data
-  | Diff : nat -> nat -> Ptr -> data
-  | ResultGet : option nat -> data. (* used in the Get function *)
+Inductive PAData : Type :=
+  | Arr : (nat -> nat) -> PAData
+  | Diff : nat -> nat -> Ptr -> PAData
+  | ResultGet : option nat -> PAData. (* used in the Get function *)
 
 (* Updates an array at index i with v. *)
 Definition upd (f : nat -> nat) (i : nat) (v : nat) := 
@@ -55,7 +55,7 @@ Hint Unfold upd.
    2. p points to different "Diff", which is a change of another valid array,
       in one position only, updating the other array in that position (using upd)
 *)
-Inductive pa_model (s : heap data) : Ptr -> (nat -> nat) -> Type :=
+Inductive pa_model (s : heap PAData) : Ptr -> (nat -> nat) -> Type :=
   | pa_model_array :
      forall p f, find s p = Some ((Arr f)) -> pa_model s p f
   | pa_model_diff :
@@ -63,16 +63,16 @@ Inductive pa_model (s : heap data) : Ptr -> (nat -> nat) -> Type :=
                    forall f, pa_model s p' f ->
                         pa_model s p (upd f i v).
 
-Hint Constructors data pa_model.
+Hint Constructors PAData pa_model.
 
-Lemma pa_model_find (s : heap data) (ptr : Ptr) (f : nat -> nat) :
-    pa_model s ptr f -> { x : data & find s ptr = Some x }.
+Lemma pa_model_find (s : heap PAData) (ptr : Ptr) (f : nat -> nat) :
+    pa_model s ptr f -> { x : PAData & find s ptr = Some x }.
 Proof. intros H; inversion H; subst; eauto. Qed.
 
 Hint Resolve pa_model_find.
 
-Lemma pa_model_find' (s : heap data) (ptr ptr' : Ptr) (f : nat -> nat) (i v : nat) :
-    pa_model s ptr f -> find s ptr = Some (Diff i v ptr') -> { x : data & find s ptr' = Some x }.
+Lemma pa_model_find' (s : heap PAData) (ptr ptr' : Ptr) (f : nat -> nat) (i v : nat) :
+    pa_model s ptr f -> find s ptr = Some (Diff i v ptr') -> { x : PAData & find s ptr' = Some x }.
 Proof. intros H1 H2; inversion H1; subst; rewrite H2 in H; inversion H; subst; eauto. Qed.
 
 Hint Resolve pa_model_find'.
@@ -127,17 +127,17 @@ Proof.
   - apply pa_model_diff with (p' := p'); auto.
 Qed.
 
-Inductive PAData : option data -> Prop :=
-  | PAArr : forall f, PAData (Some (Arr f))
-  | PADiff : forall f i v, PAData (Some (Diff f i v)).
+Inductive PADataOpt : option PAData -> Prop :=
+  | PAArr : forall f, PADataOpt (Some (Arr f))
+  | PADiff : forall f i v, PADataOpt (Some (Diff f i v)).
 
-Hint Constructors PAData.
+Hint Constructors PADataOpt.
 
 (* Separation lemma: a pointer that does not point to a structure
    of a PA, can be safely updated without affecting existing PAs  *)
 Lemma pa_model_sep_padata :
   forall s t f v t',
-    ~ (PAData (find s t')) ->
+    ~ (PADataOpt (find s t')) ->
     pa_model s t f -> pa_model (update s t' v) t f.
 Proof.
   intros.
@@ -162,7 +162,7 @@ Proof. intros; destruct (find s p); eauto. Qed.
 
 Lemma pa_model_copy_fresh :
   forall s p f, pa_model s p f -> forall v, find s p = Some v -> 
-           forall t, (forall (p' : M.key) (x : data), find s p' = Some x -> p' <> t) ->
+           forall t, (forall (p' : M.key) (x : PAData), find s p' = Some x -> p' <> t) ->
                 pa_model (update s t v) t f.
 Proof.
   intros s p f H1.
@@ -181,7 +181,7 @@ Hint Resolve pa_model_fun pa_model_diff_2 pa_model_sep'
 Hint Extern 2 =>
   match goal with
     | [ HH : (find ?s ?p = Some ?v1) +
-            (find ?s ?p = Some ?v2) |- ~ PAData (find ?s ?p) ] =>
+            (find ?s ?p = Some ?v2) |- ~ PADataOpt (find ?s ?p) ] =>
       destruct HH as [HH | HH]; rewrite HH; unfold not; intro HInv; inversion HInv 
   end.
 
@@ -189,15 +189,15 @@ Hint Extern 2 =>
                             **** INIT ****
 *******************************************************************************)
 
-Definition initSpec (n : nat) (f : nat -> nat) : WhileL data Ptr := 
-  Spec (Predicate (fun s => True)
+Definition initSpec (n : nat) (f : nat -> nat) : WhileL PAData Ptr := 
+  Spec (MkPT (fun s => True)
                   (fun s pres v s' => prod (forall p' x, find s p' = Some x -> p' <> v)
                                           (pa_model s' v f))).
 
-Definition newRef (x : data) : WhileL data Ptr :=
+Definition newRef (x : PAData) : WhileL PAData Ptr :=
   New x (fun ptr => Return _ ptr).
 
-Definition init (n : nat) (f : nat -> nat) : WhileL data Ptr := newRef (Arr f).
+Definition init (n : nat) (f : nat -> nat) : WhileL PAData Ptr := newRef (Arr f).
 
 Lemma initRefinement : forall n f, wrefines (initSpec n f) (init n f).
 Proof.
@@ -212,7 +212,7 @@ Qed.
 
 (* The original set implementation (i.e. no path compression), 
 presented in Page 3 *)
-Definition set (t : Ptr) (i : nat) (v : nat) : WhileL data Ptr :=
+Definition set (t : Ptr) (i : nat) (v : nat) : WhileL PAData Ptr :=
   Read t (fun vInT =>
   match vInT with
   | Arr f => New (Arr (upd f i v))
@@ -221,8 +221,8 @@ Definition set (t : Ptr) (i : nat) (v : nat) : WhileL data Ptr :=
   | _ => Return _ t (* absurd! *)                      
   end).
 
-Definition setSpec (ptr : Ptr) (i : nat) (v : nat) : WhileL data Ptr :=
-  Spec ( Predicate
+Definition setSpec (ptr : Ptr) (i : nat) (v : nat) : WhileL PAData Ptr :=
+  Spec ( MkPT
    (fun s => { f : nat -> nat & pa_model s ptr f })
    (fun s pres newPtr s' => match pres with
                              | existT _ f _ => prod (pa_model s' newPtr (upd f i v))
@@ -254,7 +254,7 @@ Qed.
 
 (* The list of pointers that together form a Persistent Array, hinting to
    a well-formed relation on pointers *)
-Inductive dist (s : heap data) : Ptr -> list Ptr -> Type :=
+Inductive dist (s : heap PAData) : Ptr -> list Ptr -> Type :=
   | dist_sing : forall p f, find s p = Some (Arr f) -> dist s p (p :: nil)
   | dist_cons : forall p p' i v l, 
                 find s p = Some (Diff i v p') -> 
@@ -387,7 +387,7 @@ Qed.
    of a PA, can be safely updated without affecting existing PAs  *)
 Lemma pa_dist_sep_padata :
   forall s t l v t',
-    ~ (PAData (find s t')) ->
+    ~ (PADataOpt (find s t')) ->
     dist s t l -> dist (update s t' v) t l.
 Proof.
   intros; generalize dependent t'.
@@ -404,9 +404,9 @@ Hint Resolve dist_sepT pa_model_dist pa_model_sep pa_model_sep_copy.
 Hint Resolve pa_model_desc pa_dist_sep_padata.
 
 (* If a pointer belongs to the indirection list of an array,
-   it must point to a PAData. *)
+   it must point to a PADataOpt. *)
 Lemma dist_InT_find_padata :
-  forall ptr1 s l, dist s ptr1 l -> forall ptr2, InT ptr2 l -> PAData (find s ptr2).
+  forall ptr1 s l, dist s ptr1 l -> forall ptr2, InT ptr2 l -> PADataOpt (find s ptr2).
 Proof.
   intros ptr1 s l Hdist.
   induction Hdist; intros ptr2 HInT; inversion HInT; subst; try (rewrite e; auto); eauto; inversion H0.
@@ -415,7 +415,7 @@ Qed.
 (* If a pointer belongs to the indirection list of an array,
    it must point to a valid pointer in the heap *)
 Lemma dist_InT_find : forall ptr1 s l, dist s ptr1 l -> forall ptr2, InT ptr2 l ->
-                                  { v : data & find s ptr2 = Some v }.
+                                  { v : PAData & find s ptr2 = Some v }.
 Proof.
   intros ptr1 s l Hdist.
   induction Hdist; intros ptr2 HInT; inversion HInT; subst; eauto; inversion H0.
@@ -434,7 +434,7 @@ Definition get :
   forall i, { v:Z | forall f, pa_model m p f -> v = f i }.
 *)
 
-Definition data_get_eqb_some (h : option data) : bool :=
+Definition data_get_eqb_some (h : option PAData) : bool :=
   match h with
     | Some (ResultGet (Some x)) => true
     | _ => false
@@ -454,8 +454,8 @@ Definition get (ptr : Ptr) : WhileL unit :=
   }
 *)
 
-Definition getSpec (ptr : Ptr) (i : nat) : WhileL data nat :=
-  Spec ( Predicate
+Definition getSpec (ptr : Ptr) (i : nat) : WhileL PAData nat :=
+  Spec ( MkPT
    (fun s => { f : nat -> nat & pa_model s ptr f })
    (fun s pres v s' => match pres with
                         | existT _ f _ => v = f i
@@ -475,7 +475,7 @@ Definition Inv ptr t done i si s :=
           (sum (find s done = Some (ResultGet (Some (f i))))
                (find s done = Some (ResultGet None))))))) }.
 
-Definition get (ptr : Ptr) (i : nat) : WhileL data nat. 
+Definition get (ptr : Ptr) (i : nat) : WhileL PAData nat. 
 refine (
   Read ptr (fun vInPtr =>
   New vInPtr (fun t =>
@@ -506,7 +506,7 @@ Proof.
   READ ptr vInPtr.
   NEW vInPtr t.
   NEW (ResultGet None) done.
-  WHILE (Inv ptr t done i) (fun s : S data => negb (data_get_eqb_some (find s done))); unfold Inv.
+  WHILE (Inv ptr t done i) (fun s : S PAData => negb (data_get_eqb_some (find s done))); unfold Inv.
   - refine_simpl.
     exists s1.
     repeat split; auto.
@@ -543,7 +543,7 @@ Proof.
     * exists s2; split; auto.
     * rewrite findUpdate; left; repeat apply f_equal.
       inversion p; rewrite e0 in H; inversion H; now subst.
-    * ITE (i =? n).
+    * IFF (i =? n).
       + WRITE done (ResultGet (Some n0)).
         destruct s3; eauto.
         RETURN tt.

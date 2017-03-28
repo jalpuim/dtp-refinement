@@ -12,33 +12,36 @@ Section Refinement.
   Variable t : Type.
   Definition S := heap t.
 
-Definition Pow : Type -> Type := fun a => a -> Type.
+Definition Pred : Type -> Type := fun a => a -> Type.
 
-Definition K : forall {A} {a : Type}, Pow S -> (forall s:S, A s -> a -> Pow S) := fun a _ pt _ _ _ s => pt s.
+Definition K : forall {A} {a : Type}, Pred S -> (forall s:S, A s -> a -> Pred S) := fun a _ pt _ _ _ s => pt s.
 
-Definition Ka : forall {A} {a : Type}, (a -> Pow S) -> (forall s:S, A s -> a -> Pow S) := fun _ _ pt _ _ a s => pt a s.
+Definition Ka : forall {A} {a : Type}, (a -> Pred S) -> (forall s:S, A s -> a -> Pred S) := fun _ _ pt _ _ a s => pt a s.
 
 Implicit Arguments K [A].
 
 Implicit Arguments Ka [A].
 
-Definition subset : Pow S -> Pow S -> Type :=
+Definition subset : Pred S -> Pred S -> Type :=
   fun P1 P2 => forall s, P1 s -> P2 s.
 
 Notation "P1 ⊂ P2" := (subset P1 P2) (at level 80) : type_scope.
 
-Inductive PT (a : Type) : Type :=
-  Predicate : forall pre : Pow S, (forall s : S, pre s -> a -> Pow S) -> PT a.
+Record PT (a : Type) : Type :=
+  MkPT { pre : Pred S;
+         post : (forall s : S, pre s -> a -> Pred S) }.
 
-Definition pre {a : Type} (pt : PT a) : Pow S := 
+(*
+Definition pre {a : Type} (pt : PT a) : Pred S := 
   match pt with
-    | Predicate pre _ => pre
+    | MkPT pre _ => pre
   end.
 
-Definition post {a : Type} (pt : PT a) : (forall s : S, pre pt s -> a -> Pow S) :=
-  match pt return (forall s : S, pre pt s -> a -> Pow S) with
+Definition post {a : Type} (pt : PT a) : (forall s : S, pre pt s -> a -> Pred S) :=
+  match pt return (forall s : S, pre pt s -> a -> Pred S) with
     | Predicate pre p => p
   end.
+*)
 
 Inductive Refines {a : Type} (pt1 pt2 : PT a) : Type :=
   Refinement : 
@@ -47,14 +50,12 @@ Inductive Refines {a : Type} (pt1 pt2 : PT a) : Type :=
 
 Notation "PT1 ⊏ PT2" := (Refines PT1 PT2) (at level 90, no associativity) : type_scope.
 
-Notation "[ p , q ]" := (Predicate p q) (at level 70) : type_scope.
+Notation "[ p , q ]" := (MkPT p q) (at level 70) : type_scope.
 
 Ltac refine_simpl  := unfold pre, post, K, Ka, subset in *; intros; simpl in *.
 Ltac destruct_pt a := refine_simpl; destruct_all (PT a).
 
-Definition Pred (A : Type) : Type := A -> Type.
-
-Definition semantics {A : Type} (pt : PT A) : Pred (A * S ) -> Pred S
+Definition semantics {A : Type} (pt : PT A) : Pred (A * S) -> Pred S
   := fun P s =>
       {p : pre pt s
        & forall s' v, post pt s p v s' -> P (v, s')}.
@@ -102,7 +103,7 @@ Definition SkipPT {a : Type} : PT a :=
 *******************************************************************************)
 
 
-Lemma strengthenPost {a : Type} (P : Pow S) (Q1 Q2 : forall s, P s -> a -> Pow S) :
+Lemma strengthen {a : Type} (P : Pred S) (Q1 Q2 : forall s, P s -> a -> Pred S) :
   (forall (s : S) (p : P s) (v : a), Q1 s p v ⊂ Q2 s p v) -> 
   [ P , Q2 ] ⊏ [ P , Q1 ].
 Proof.
@@ -111,7 +112,7 @@ Proof.
   refine_simpl; now auto.
 Qed.
 
-Lemma weakenPre {a : Type} (P1 P2 : Pow S) (f : P1 ⊂ P2) (Q : S -> a -> Pow S) :
+Lemma weaken {a : Type} (P1 P2 : Pred S) (f : P1 ⊂ P2) (Q : S -> a -> Pred S) :
   [P1, fun s _ => Q s ] ⊏ [P2 , fun s _ => Q s ].
 Proof.
   intros; apply (Refinement ([P1, fun s _ => Q s]) ([P2, fun s _ => Q s]) f).
@@ -142,7 +143,7 @@ Definition refineReflPT {a} (pt : PT a) : pt ⊏ pt.
 Definition BindPT {a b : Type} (pt1 : PT a) (pt2 : a -> PT b) : PT b :=
   let seqPre := fun s => {pres : pre pt1 s & forall t v, post pt1 s pres v t -> pre (pt2 v) t} in
                
-  let seqPost : forall s : S, seqPre s -> b -> Pow S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) =>
+  let seqPost : forall s : S, seqPre s -> b -> Pred S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) =>
     { t : S &
     { x : a &
     { q : post pt1 s (projT1 pres) x t &
@@ -193,7 +194,7 @@ Definition WhilePT' {a : Type} (* inv: initial state -> current state -> Type*)
 
 Definition SeqPT {a b : Type} (pt1 : PT a) (pt2 : PT b) : PT b :=
   let seqPre := fun s => { pres : pre pt1 s & forall t v, post pt1 s pres v t -> pre pt2 t} in
-  let seqPost : forall s : S, seqPre s -> b -> Pow S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) => 
+  let seqPost : forall s : S, seqPre s -> b -> Pred S := fun (s : S) (pres : seqPre s) (v : b) (s' : S) => 
   {t : S &
   {v' : a &
   {q : post pt1 s (projT1 pres) v' t &

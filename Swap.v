@@ -10,7 +10,7 @@ Require Import Heap.
 *************************************************************)
 
 Definition SWAP {a : Type} (p q : Ptr): WhileL a unit := 
-  Spec (Predicate
+  Spec (MkPT
           (fun s => prod {x : a | find s p = Some x} {y : a | find s q = Some y})
           (fun s _ _ s' => find s p = find s' q /\ find s q = find s' p)).
 

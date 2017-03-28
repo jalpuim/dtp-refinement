@@ -18,12 +18,12 @@ Require Import Program.Equality.
 
 Definition square : nat -> nat := fun n => n * n.
 
-Definition sqrtSpec (ptr : Ptr) : WhileL nat nat.
-  refine (Spec _).
-  refine (Predicate (fun s => {x : nat | find s ptr = Some x}) _).
-  intros s [x H] result s'.
-  apply (square result <= x < square (result+1)).
-Defined.
+Definition sqrtSpec (ptr : Ptr) : WhileL nat nat :=
+  Spec (MkPT (fun s => {x : nat | find s ptr = Some x})
+             (fun s Hpre result s' =>
+                match Hpre with
+                  | exist _ x _ => square result <= x < square (result+1)
+                end)). 
 
 Definition find_eqb_some (h : option nat) : nat :=
   match h with
@@ -48,11 +48,11 @@ Hint Resolve le_0_n leb_iff_conv beq_nat_eq.
 
 (*** Derivation ***)
 
-Definition sqrtResult (ptr : Ptr) :
-  { c : WhileL nat nat & prod (sqrtSpec ptr ⊑ c) (isExecutable c) }.
+Definition deriveSqrt (P : Ptr) :
+  { c : WhileL nat nat & prod (sqrtSpec P ⊑ c) (isExecutable c) }.
 Proof.
   econstructor; unfold sqrtSpec. split.
-  - READ ptr s.
+  - READ P s.
     NEW (s + 1) Q.
     NEW 0 R.
     WHILE (Inv Q R s) (Cond Q R); unfold Inv, Cond.
@@ -60,7 +60,7 @@ Proof.
       rewrite Nat.add_comm; apply Nat.lt_lt_add_r; auto.
     * READ Q vInQ.
       READ R vInR.
-      ITE (s <? square (Nat.div2 (vInQ + vInR))).
+      IFF (s <? square (Nat.div2 (vInQ + vInR))).
       WRITE Q (Nat.div2 (vInQ + vInR)).
       RETURN tt.
       repeat (eexists; split; eauto); repeat split; eauto.   
@@ -82,7 +82,7 @@ Defined.
 
 Variable t : Ptr.
 
-Eval simpl in projT1 (sqrtResult t).
+Eval simpl in projT1 (deriveSqrt t).
 
     
   

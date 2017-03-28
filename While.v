@@ -37,34 +37,34 @@ Fixpoint semantics {a : Type} (w: WhileL a) : PT v a :=
       let post := fun s pres v' s' => 
                     post (semantics (k (projT1 pres))) (update s (projT1 pres) (v)) (snd (projT2 pres)) v' s' in
       
-      Predicate pre post
+      MkPT pre post
     | Read ptr k =>
       let readPre := fun h => { x : v & find h ptr = Some x} in
       let pre := fun s => {p : readPre s & pre (semantics (k (projT1 p))) s} in
       let post := fun s pres x s' => 
                     post (semantics (k (projT1 (projT1 pres)))) s (projT2 pres) x s' in
-      Predicate pre post
+      MkPT pre post
     | Write ptr x k => 
       let pre := fun s => 
                    prod ({y : v & find s ptr = Some y})
                         (pre (semantics k) (update s ptr x)) in
       let post := fun s pres res s' =>
                     post (semantics k) (update s ptr x) (snd pres) res s' in
-      Predicate pre post
+      MkPT pre post
     | While inv c body k => SeqPT (WhilePT' inv c (semantics body)) (@semantics a k)
     | Spec s => s
-    | Return  x => Predicate (fun s => True) (fun s _ v s' => s = s' /\ v = x)
+    | Return  x => MkPT (fun s => True) (fun s _ v s' => s = s' /\ v = x)
   end.
 
-Definition preConditionOf {a : Type} (w : WhileL a) : Pow (S v) :=
+Definition preConditionOf {a : Type} (w : WhileL a) : Pred (S v) :=
   match semantics w with
-    | Predicate p _ => p
+    | MkPT p _ => p
   end.
 
 Definition postConditionOf {a : Type} (w : WhileL a)
-  : (forall s : (S v), preConditionOf w s -> a -> Pow (S v)) :=
-  match semantics w as x return (forall s : (S v), match x with | Predicate p _ => p end s -> a -> Pow (S v)) with
-    | Predicate pre post => post
+  : (forall s : (S v), preConditionOf w s -> a -> Pred (S v)) :=
+  match semantics w as x return (forall s : (S v), match x with | MkPT p _ => p end s -> a -> Pred (S v)) with
+    | MkPT pre post => post
   end.
 
 Fixpoint bind {a b : Type} (w : WhileL a) (k : a -> WhileL b) {struct w} : WhileL b :=
@@ -135,9 +135,9 @@ Qed.
 
 Lemma readSpec {a : Type} (ptr : Ptr)  (spec : PT v a) (w' : v -> WhileL a)
   (H : forall s, pre (spec) s -> {y : v & find s ptr = Some (y)})
-  (Step : forall y, Spec (Predicate (fun s => prod (pre spec s)
-                                                    (find s ptr = Some y))
-                                      (fun s pres x s' => post spec s (fst pres) x s')) ⊑ w' y) :
+  (Step : forall v, Spec (MkPT (fun s => prod (pre spec s)
+                                                    (find s ptr = Some v))
+                                      (fun s pres x s' => post spec s (fst pres) x s')) ⊑ w' v) :
   Spec spec ⊑ Read ptr w'.
 Proof.
   unshelve eapply readRefines.
@@ -161,7 +161,7 @@ Lemma readStep {a : Type} (ptr : Ptr)  (spec : PT _ a)
   (H : forall s, pre (spec) s -> {y : v & find s ptr = Some y})
   (Step : {w : v -> WhileL a &
             forall y, 
-            Spec (Predicate (fun s => prod (pre spec s)
+            Spec (MkPT (fun s => prod (pre spec s)
                                    (find s ptr = Some y))
                     (fun s pres x s' => post spec s (fst pres) x s' )) ⊑ w y}) :
   {w : WhileL a & Spec spec ⊑ w}.
@@ -180,7 +180,7 @@ Proof.
 Qed.  
 
 Lemma newSpec {a : Type} (y : v) (spec : PT v a) (w : Ptr -> WhileL a)
-      (Step : forall p, Spec (Predicate (fun s => { t : S v & prod (pre spec t)
+      (Step : forall p, Spec (MkPT (fun s => { t : S v & prod (pre spec t)
                                           (prod (forall p' x, find t p' = Some x -> p' <> p)
                                           (s = (update t p (y)))) })
                                       (fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s')) ⊑ w p) :
@@ -203,7 +203,7 @@ Qed.
 
 Lemma newStep {a : Type} (y : v) (spec : PT _ a)
       (Step : {w : (Ptr -> WhileL a) & forall (p : Ptr),
-                Spec (Predicate (fun s => { t : S v & prod (pre spec t)
+                Spec (MkPT (fun s => { t : S v & prod (pre spec t)
                                             (prod (forall p' x, find t p' = Some x -> p' <> p)
                                                   (s = (update t p (y)))) })
                         (fun s pres v s' => post spec (projT1 pres) (fst (projT2 pres)) v s')) ⊑ w p}) :
@@ -225,7 +225,7 @@ Lemma writeRefines {a : Type} (w w' : WhileL a) (ptr : Ptr) (y : v)
 Lemma writeSpec {a : Type} (ptr : Ptr) (y : v) (spec : PT _ a) (w : WhileL a)
   (H : forall s, pre spec s -> {x : v & find s ptr = Some (x)})
   (Step :  Spec
-    (Predicate  (fun s => {t : S v & prod (pre spec t) (s = (update t ptr (y)))})
+    (MkPT  (fun s => {t : S v & prod (pre spec t) (s = (update t ptr (y)))})
                     (fun s pres x s' => 
               (post spec (projT1 pres) (fst (projT2 pres)) x s'))) ⊑ w) :
   Spec spec ⊑ Write ptr y w.
@@ -240,7 +240,7 @@ Lemma writeStep {a : Type} (ptr : Ptr) (y : v) (spec : PT _ a)
   (H : forall s, pre spec s -> {x : v & find s ptr = Some x})
   (Step :  
      {w : WhileL a & Spec
-    (Predicate (fun s => {t : S v & prod (pre spec t) (s = (update t ptr y))})
+    (MkPT (fun s => {t : S v & prod (pre spec t) (s = (update t ptr y))})
        (fun s pres x s' => 
               (post spec (projT1 pres) (fst (projT2 pres)) x s'))) ⊑ w}) :
   {w : WhileL a & Spec spec ⊑ w}.
@@ -269,8 +269,8 @@ Lemma whileRefines {a : Type} (I : S v -> S v -> Type) (c : S v -> bool) (body :
 
 Lemma whileSpec {a : Type} (I : S v -> S v -> Type) (c : S v -> bool) (spec : PT _ a) (k : WhileL a) (body : WhileL unit)
   (d : forall s, pre spec s -> I s s)
-  (refineBody : Spec (Predicate (fun s => {t : S v & prod (I t s) (Is_true (c s))}) (fun s pres _ s' => I (projT1 pres) s')) ⊑ body)
-  (refineRest : Spec (Predicate (fun s => {t : S v & prod (pre spec t) (
+  (refineBody : Spec (MkPT (fun s => {t : S v & prod (I t s) (Is_true (c s))}) (fun s pres _ s' => I (projT1 pres) s')) ⊑ body)
+  (refineRest : Spec (MkPT (fun s => {t : S v & prod (pre spec t) (
                                                      prod (I t s) (
                                                           (Is_false (c s))
                                           (* This states that there is some initial state t that satisfies the precondition of spec
@@ -296,11 +296,11 @@ Lemma whileSpec {a : Type} (I : S v -> S v -> Type) (c : S v -> bool) (spec : PT
     * refine_simpl. unshelve refine (h1 X (existT _ s ( x , _)) _ _ _); [now eauto | eassumption ].
   Qed.
 
-Lemma changeSpec {a : Type} (pt2 pt1 : PT _ a) (w : WhileL a)
-  (d : subset (pre pt1) (pre pt2))
-  (h : forall (s : S v) (x : pre pt1 s) y, subset (post pt2 s (d s x) y) (post pt1 s x y))
-  (H : Spec pt2 ⊑ w) :
-  Spec pt1 ⊑ w.
+Lemma changeSpec {a : Type} (pt1 pt2 : PT _ a) (w : WhileL a)
+  (d : subset (pre pt2) (pre pt1))
+  (h : forall (s : S v) (x : pre pt2 s) y, subset (post pt1 s (d s x) y) (post pt2 s x y))
+  (H : Spec pt1 ⊑ w) :
+  Spec pt2 ⊑ w.
   Proof.
     eapply refineTrans; [ | apply H]; exact (Refinement _ _ d h).
   Qed.
@@ -334,7 +334,7 @@ Ltac refine_simpl :=
   repeat split; repeat subst; simpl in *.
 Ltac unfold_refinements := unfold wrefines, semantics, preConditionOf, postConditionOf in *.
 
-Ltac goal_simpl :=  refine_simpl; eauto.
+Ltac simpl_goal :=  refine_simpl; eauto.
 Ltac context_simpl :=
   repeat match goal with
            | [H1 : find ?s ?T = Some ?x, H2 : find ?s ?T = Some ?y |- _ ] => assert (E : x = y) by (eapply (findUnique _ _ H1 H2)); subst x; clear H2
@@ -363,13 +363,13 @@ Ltac simpl_lookup :=
   end.
         
 (* Tactics that apply certain constructs *)
-Ltac READ ptr v := eapply (readSpec ptr); [ | intros v]; goal_simpl.
-Ltac NEW v ptr := eapply (@newSpec _ _ v); intros ptr; goal_simpl.
-Ltac WRITE ptr v := eapply (@writeSpec _ _ ptr v); goal_simpl.
-Ltac ASSERT P := unshelve eapply (changeSpec P); goal_simpl.
+Ltac READ ptr v := eapply (readSpec ptr); [ | intros v]; simpl_goal.
+Ltac NEW v ptr := eapply (@newSpec _ _ v); intros ptr; simpl_goal.
+Ltac WRITE ptr v := eapply (@writeSpec _ _ ptr v); simpl_goal.
+Ltac ASSERT P := unshelve eapply (changeSpec P); simpl_goal.
 Ltac RETURN v := eapply (returnStep v); unfold_refinements; refine_simpl; context_simpl; context_clean.
-Ltac WHILE I c := apply (whileSpec I c); goal_simpl.
-Ltac ITE c := apply (ifSpec c); remember c as b; destruct b; goal_simpl.
+Ltac WHILE I c := apply (whileSpec I c); simpl_goal.
+Ltac IFF c := apply (ifSpec c); remember c as b; destruct b; simpl_goal.
 
 Notation "P1 ⊑ P2" := (wrefines P1 P2) (at level 90, no associativity).
 
